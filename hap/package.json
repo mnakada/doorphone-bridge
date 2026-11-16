@@ -1,0 +1,25 @@
+{
+  "name": "doorphone-hap",
+  "version": "0.0.1",
+  "main": "accessory.js",
+  "scripts": {
+    "start": "node accessory.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-kinesis-video": "^3.1169.0",
+    "@aws-sdk/client-kinesis-video-signaling": "^3.1169.0",
+    "@peculiar/webcrypto": "^2.0.0",
+    "@peculiar/x509": "^3.1.0",
+    "amazon-kinesis-video-streams-webrtc": "^2.9.0",
+    "hap-nodejs": "^1.1.0",
+    "jimp": "^1.6.1",
+    "jsqr": "^1.4.0",
+    "mqtt": "^5.16.1",
+    "node-datachannel": "^0.33.6",
+    "node-forge": "^1.4.3",
+    "protobufjs": "^8.8.1",
+    "qrcode": "^1.5.4",
+    "reflect-metadata": "^0.2.2",
+    "ws": "^8.23.0"
+  }
+}

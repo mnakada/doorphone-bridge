@@ -1,0 +1,11 @@
+Package: doorphone-hap
+Version: 0.3.0
+Section: net
+Priority: optional
+Architecture: arm64
+Depends: nodejs (>= 18), ffmpeg, adduser
+Maintainer: Mitsuru Nakada <mitsuru_nakada@mac.com>
+Description: HomeKit bridge for Panasonic VL-X70AH doorphone
+ Exposes the Panasonic VL-X70AH (home intercom) as a HomeKit
+ video doorbell + camera. Connects to the base via AWS KVS WebRTC
+ and relays the H264 stream to Apple Home.

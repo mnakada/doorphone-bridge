@@ -1,0 +1,43 @@
+// Reconstructed from webrtc_if/pairing/Pairing.java descriptor (2026-11-16).
+syntax = "proto3";
+package webrtc_if.pairing;
+
+message Request_Pairing {
+  enum MobileOS {
+    OS_UNSPECIFIED = 0;
+    OS_ANDROID = 1;
+    OS_IOS = 2;
+  }
+  bytes  csr = 1;
+  string mobile_device_id = 2;
+  MobileOS os = 3;
+  string profile_name = 4;
+  bytes  profile_image = 5;
+  string device_token = 6;
+  string voip_token = 7;
+}
+
+message Response_Pairing {
+  enum ErrorReason {
+    REASON_UNSPECIFIED = 0;
+    REASON_OTHER = 1;
+    REASON_CONFLICT = 2;
+  }
+  bool result = 1;
+  ErrorReason error_reason = 2;
+}
+
+message Notify_AnswerPairing {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_DENIED = 1;
+    REASON_TIMEOUT = 2;
+    REASON_INTERRUPT = 3;
+    REASON_BAD_REQUEST = 4;
+  }
+  bool   result = 1;
+  string unit_device_id = 2;
+  bytes  client_cert = 3;
+  Reason reason = 4;
+  bytes  auto_unlock_key = 10;
+}

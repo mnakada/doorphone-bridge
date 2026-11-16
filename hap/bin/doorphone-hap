@@ -1,0 +1,131 @@
+#!/usr/bin/env node
+/**
+ * doorphone-hap — single CLI entry point.
+ *
+ * Subcommands:
+ *   doorphone-hap serve           run the accessory (default — used by systemd)
+ *   doorphone-hap pair <qr|url>   register with the base station, store cert
+                                 (requires /etc/doorphone-hap/hmac.key —
+                                  see research/extract-hmac-key.md)
+ *   doorphone-hap status          dump current pairing state
+ *   doorphone-hap version         print the package version
+ */
+const path = require('path');
+const fs = require('fs');
+
+const APP_DIR = fs.realpathSync(path.join(__dirname, '..'));
+
+function usage(code = 1) {
+  process.stdout.write([
+    'Usage: doorphone-hap <subcommand> [args]',
+    '',
+    'Subcommands:',
+    '  serve                       run the accessory (default)',
+    '  pair <qr.jpg|qr.heic|url>   pair with the base station',
+    '    --out DIR                   where to write cert/key/unit (default /etc/doorphone-hap)',
+    '    --profile-name NAME         display name sent to the base (default "Doorphone Bridge")',
+    '    --hmac-key PATH             HMAC key file (default /etc/doorphone-hap/hmac.key)',
+    '  status                      show pairing status',
+    '  version                     print package version',
+    '',
+  ].join('\n'));
+  process.exit(code);
+}
+
+function cmdStatus() {
+  const conf = process.env.CONFIG_PATH || '/etc/doorphone-hap/config.json';
+  let cfg;
+  try { cfg = JSON.parse(fs.readFileSync(conf, 'utf8')); }
+  catch (_) { cfg = { doorphone: { credsPath: '/etc/doorphone-hap/kvs_creds.json' } }; }
+  const dir = path.dirname(cfg.doorphone?.credsPath || '/etc/doorphone-hap/kvs_creds.json');
+  const files = {
+    'cert.pem': fs.existsSync(path.join(dir, 'cert.pem')),
+    'privkey.pem': fs.existsSync(path.join(dir, 'privkey.pem')),
+    'unit.json': fs.existsSync(path.join(dir, 'unit.json')),
+    'kvs_creds.json': fs.existsSync(cfg.doorphone?.credsPath || '/etc/doorphone-hap/kvs_creds.json'),
+  };
+  console.log('Config file:', conf);
+  console.log('Credentials dir:', dir);
+  for (const [name, present] of Object.entries(files)) {
+    console.log(`  ${present ? 'OK' : '--'}  ${name}`);
+  }
+  if (files['unit.json']) {
+    try {
+      const u = JSON.parse(fs.readFileSync(path.join(dir, 'unit.json'), 'utf8'));
+      console.log('Unit:', u.unitDeviceId);
+      console.log('Paired at:', u.pairedAt);
+      console.log('Channel:', u.channelName);
+    } catch (_) {}
+  }
+  const paired = files['cert.pem'] && files['privkey.pem'];
+  process.exit(paired ? 0 : 1);
+}
+
+function cmdVersion() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf8'));
+  console.log(pkg.version || 'unknown');
+}
+
+async function cmdPair(argv) {
+  // Delegate to lib. Inherits CLI arg parsing from pair.js main.
+  const { pair } = require(path.join(APP_DIR, 'pair.js'));
+  const args = { out: '/etc/doorphone-hap', profileName: 'Doorphone Bridge', hmacKeyPath: null };
+  const positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--out') args.out = argv[++i];
+    else if (a === '--profile-name') args.profileName = argv[++i];
+    else if (a === '--hmac-key') args.hmacKeyPath = argv[++i];
+    else if (a === '-h' || a === '--help') usage(0);
+    else positional.push(a);
+  }
+  if (!positional[0]) {
+    console.error('error: provide a QR image path or /reg URL');
+    usage(2);
+  }
+  const start = Date.now();
+  const logger = (kind, ...rest) => console.log(`[${((Date.now() - start) / 1000).toFixed(1)}s] ${kind}`, ...rest);
+  try {
+    const info = await pair({ input: positional[0], outDir: args.out, profileName: args.profileName, hmacKeyPath: args.hmacKeyPath, logger });
+    console.log('\nPAIRED.');
+    console.log(`  unit:    ${info.unitDeviceId}`);
+    console.log(`  files:   ${args.out}/{cert.pem, privkey.pem, unit.json}`);
+    console.log('\nNext: sudo systemctl restart doorphone-hap');
+  } catch (e) {
+    console.error('\nFAILED:', e.message || e);
+    process.exit(1);
+  }
+}
+
+function cmdServe() {
+  // Chain to accessory.js.
+  require(path.join(APP_DIR, 'accessory.js'));
+}
+
+const sub = process.argv[2];
+const rest = process.argv.slice(3);
+switch (sub) {
+  case undefined:
+  case 'serve':
+    cmdServe();
+    break;
+  case 'pair':
+    cmdPair(rest);
+    break;
+  case 'status':
+    cmdStatus();
+    break;
+  case 'version':
+  case '--version':
+  case '-v':
+    cmdVersion();
+    break;
+  case '--help':
+  case '-h':
+  case 'help':
+    usage(0);
+    break;
+  default:
+    console.error(`unknown subcommand: ${sub}`);
+    usage(1);
+}

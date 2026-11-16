@@ -1,0 +1,51 @@
+# Secrets & paired-device state — never commit
+extracted-state/
+mitm-logs/
+*.pem
+kvs_creds.json
+unit.json
+app.db
+KeyStoreName_*
+hmac.key
+packaging/deb/etc/doorphone-hap/hmac.key
+
+# Decompiled / reverse-engineered Android app sources (copyrighted upstream)
+# Kept under research/ for traceability only.
+research/apks/
+research/apktool-out/
+research/jadx-out/
+research/jadx-src/
+research/extracted/
+research/mitm-logs/
+research/__pycache__/
+research/.venv/
+research/ドアホンコネクトS解析.txt
+
+# Build outputs / caches
+/doorphone-hap_*.deb
+packaging/stage/
+packaging/scripts-mount/
+packaging/.container-out/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Runtime artifacts
+hap/persist/
+hap/doorphone.sdp
+hap/snapshot.jpg
+hap/config.json
+/tmp/
+*.h264
+*.mp4
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Per-user config
+research/.apkeep.ini

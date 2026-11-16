@@ -1,0 +1,23 @@
+# Debian 13 arm64 container used by packaging/build.sh to produce a
+# self-contained doorphone-hap_<ver>_arm64.deb. Running npm install in the
+# target OS is the only reliable way to pull the correct *-linux-arm64-*
+# prebuilt binaries for node-datachannel / lightningcss / etc.
+FROM --platform=linux/arm64 debian:trixie-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      dpkg-dev \
+      fakeroot \
+      gnupg \
+      nodejs \
+      npm \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Staging tree + source land under /build/stage via bind mount from the host.
+# The build script is checked-in at packaging/do-build.sh and mounted alongside.
+ENTRYPOINT ["/build/scripts/do-build.sh"]

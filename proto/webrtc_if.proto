@@ -1,0 +1,30 @@
+// Minimal WebRtcMessage subset sufficient to start a MONITOR session.
+// Extracted from webrtc_if/WebrtcIf.java descriptor (2026-11-15).
+syntax = "proto3";
+package webrtc_if;
+
+import "call.proto";
+import "pairing.proto";
+
+enum InterfaceVersion {
+  VERSION_UNSPECIFIED = 0;
+  VERSION_1 = 1;
+}
+
+message WebRtcMessage {
+  int32 request_id = 1;
+  InterfaceVersion version = 2;
+
+  oneof cmd {
+    webrtc_if.call.Request_Connect       request_connect       = 100;  // field 0x64 = tag 100
+    webrtc_if.call.Response_Connect      response_connect      = 101;
+    webrtc_if.call.Notify_DenialConnection notify_denialconnection = 102;
+    webrtc_if.call.Request_Disconnect    request_disconnect    = 104;
+    webrtc_if.call.Response_Disconnect   response_disconnect   = 105;
+    webrtc_if.call.Notify_Disconnect     notify_disconnect     = 106;
+
+    webrtc_if.pairing.Request_Pairing      request_pairing       = 800;
+    webrtc_if.pairing.Response_Pairing     response_pairing      = 801;
+    webrtc_if.pairing.Notify_AnswerPairing notify_answerpairing  = 802;
+  }
+}

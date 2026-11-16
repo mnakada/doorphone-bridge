@@ -1,0 +1,34 @@
+[Unit]
+Description=Doorphone to HomeKit bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=doorphone-hap
+Group=doorphone-hap
+Environment=NODE_ENV=production
+Environment=CONFIG_PATH=/etc/doorphone-hap/config.json
+WorkingDirectory=/opt/doorphone-hap
+ExecStart=/usr/bin/node /opt/doorphone-hap/bin/doorphone-hap serve
+Restart=on-failure
+RestartSec=5
+# Runtime dirs managed by systemd (/run/doorphone-hap)
+RuntimeDirectory=doorphone-hap
+RuntimeDirectoryMode=0750
+StateDirectory=doorphone-hap
+StateDirectoryMode=0750
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# Pairing needs to drop cert/key/unit into /etc/doorphone-hap; otherwise the
+# service has only the credentials file open for writes.
+ReadWritePaths=/var/lib/doorphone-hap /etc/doorphone-hap
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

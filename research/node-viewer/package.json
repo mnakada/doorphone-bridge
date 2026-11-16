@@ -1,0 +1,20 @@
+{
+  "name": "viewer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-kinesis-video": "^3.1169.0",
+    "@aws-sdk/client-kinesis-video-signaling": "^3.1169.0",
+    "@roamhq/wrtc": "^0.10.0",
+    "amazon-kinesis-video-streams-webrtc": "^2.9.0",
+    "node-datachannel": "^0.33.6",
+    "ws": "^8.23.0"
+  }
+}

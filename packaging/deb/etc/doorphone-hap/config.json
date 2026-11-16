@@ -1,0 +1,28 @@
+{
+  "accessory": {
+    "name": "Doorphone",
+    "username": "DC:D0:0F:00:00:01",
+    "pincode": "031-45-154",
+    "port": 47129
+  },
+  "doorphone": {
+    "credsPath": "/etc/doorphone-hap/kvs_creds.json",
+    "certPath": "/etc/doorphone-hap/cert.pem",
+    "keyPath": "/etc/doorphone-hap/privkey.pem",
+    "unitInfoPath": "/etc/doorphone-hap/unit.json",
+    "videoPort": 5004,
+    "audioPort": 5006
+  },
+  "ffmpeg": {
+    "path": "/usr/bin/ffmpeg"
+  },
+  "storage": {
+    "persistPath": "/var/lib/doorphone-hap/persist",
+    "sdpPath": "/run/doorphone-hap/doorphone.sdp"
+  },
+  "web": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8080
+  }
+}

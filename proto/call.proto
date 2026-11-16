@@ -1,0 +1,52 @@
+syntax = "proto3";
+package webrtc_if.call;
+
+message Request_Connect {
+  enum Device {
+    DEVICE_UNSPECIFIED = 0;
+    DEVICE_DOOR = 1;
+    DEVICE_CAMERA = 2;
+  }
+  enum CallType {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_TALK = 1;
+    TYPE_MONITOR = 2;
+    TYPE_INCOMING_MONITOR = 3;
+    TYPE_DETECTING_MONITOR = 4;
+  }
+  Device device = 1;
+  int32 devno = 2;
+  CallType type = 4;
+}
+
+message Response_Connect {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_REQ_DENIED = 1;
+    REASON_CONNECTION_FAILED = 2;
+    REASON_BUSY = 3;
+  }
+  bool result = 1;
+  Reason reason = 10;
+  // skipping camera_state, support_presstalk, delivery_message
+}
+
+message Notify_DenialConnection {
+  enum DenialReason {
+    REASON_UNSPECIFIED = 0;
+    REASON_TIMEOUT = 1;
+    REASON_OTHER = 2;
+    REASON_UNKNOWN = 3;
+  }
+  DenialReason reason = 1;
+}
+
+message Request_Disconnect {
+}
+
+message Response_Disconnect {
+}
+
+message Notify_Disconnect {
+  string call_id = 1;
+}
