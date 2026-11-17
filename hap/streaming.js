@@ -129,12 +129,18 @@ class StreamingDelegate {
 
     const args = [
       '-y', '-loglevel', 'info',
+      // Input 0: depacketized H264 Annex-B (video) on stdin.
       '-f', 'h264',
       '-analyzeduration', '0', '-probesize', '32768',
       '-use_wallclock_as_timestamps', '1',
       '-fflags', '+genpts',
       '-i', 'pipe:0',
-      '-f', 'lavfi', '-i', `anullsrc=channel_layout=mono:sample_rate=${a.sample_rate * 1000}`,
+      // Input 1: doorphone PCMU (mu-law) stream, header-stripped, read from fd 3.
+      // Using raw mu-law (not RTP) lets ffmpeg timestamp from its own clock,
+      // dodging the base's non-monotonic RTP timestamps that broke libopus.
+      '-f', 'mulaw', '-ar', '8000', '-ac', '1',
+      '-use_wallclock_as_timestamps', '1',
+      '-i', 'pipe:3',
       // Video — pass-through to HomeKit SRTP. No re-encode = stable on iOS.
       '-an', '-sn', '-dn',
       '-map', '0:v',
@@ -162,15 +168,21 @@ class StreamingDelegate {
 
     console.log('[ffmpeg start] session=', request.sessionID);
 
-    const ff = spawn(this.ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    // stdio: stdin (H264), stdout/stderr, fd 3 (PCMU audio).
+    const ff = spawn(this.ffmpegPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
+    });
+    const audioFd = ff.stdio[3];
     ff.stderr.on('data', d => process.stderr.write('[ff] ' + d));
     ff.stdin.on('error', e => { if (e.code !== 'EPIPE') console.log('[ff stdin err]', e.message); });
+    audioFd.on('error', e => { if (e.code !== 'EPIPE') console.log('[ff fd3 err]', e.message); });
     ff.on('close', (code, sig) => {
       console.log(`[ffmpeg exit] code=${code} sig=${sig} session=${request.sessionID}`);
     });
 
     this.source.addVideoConsumer(ff.stdin);
-    this.ongoingSessions.set(request.sessionID, { ff });
+    this.source.addAudioConsumer(audioFd);
+    this.ongoingSessions.set(request.sessionID, { ff, audioFd });
     callback();
   }
 
@@ -178,6 +190,7 @@ class StreamingDelegate {
     const s = this.ongoingSessions.get(sessionID);
     if (!s) return;
     this.source.removeVideoConsumer(s.ff.stdin);
+    this.source.removeAudioConsumer(s.audioFd);
     try { s.ff.kill('SIGKILL'); } catch (_) {}
     this.ongoingSessions.delete(sessionID);
   }

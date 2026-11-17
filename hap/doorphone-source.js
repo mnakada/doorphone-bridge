@@ -41,6 +41,7 @@ class DoorphoneSource extends EventEmitter {
     this.udpBound = new Promise((r) => this.udp.bind(0, '127.0.0.1', r));
     this._vLastSeq = -1; this._vLost = 0; this._vReorder = 0;
     this._videoConsumers = new Set(); // Set<WritableStream> for depacketized H264 Annex-B
+    this._audioConsumers = new Set(); // Set<WritableStream> for raw PCMU bytes (mu-law 8kHz mono)
     this._lastKeyframe = null; // Buffer: SPS+PPS+IDR concatenated, suitable for ffmpeg decode
     this._lastKeyframeAt = 0;
     this._pendingKeyframeNals = null; // scratch buffer while assembling
@@ -340,10 +341,46 @@ class DoorphoneSource extends EventEmitter {
 
   _onAudioRtp(buf) {
     if (!Buffer.isBuffer(buf)) buf = Buffer.from(buf);
-    const pt = buf[1] & 0x7f;
-    if (pt >= 72 && pt <= 76) return;
+    // Reject RTCP (packet types 200-212).
+    if (buf[1] >= 200 && buf[1] <= 212) return;
     this.audioPkts++;
-    this.udp.send(buf, this.audioPort, this.videoHost, () => {});
+    if (!this._audioConsumers.size) return;
+    // Strip the RTP header + any CSRC / extension, forward the PCMU payload
+    // bytes as a raw mu-law stream. ffmpeg can read this with -f mulaw and
+    // never sees the (non-monotonic) RTP timestamps.
+    const cc = buf[0] & 0x0f;
+    const x = (buf[0] & 0x10) !== 0;
+    let off = 12 + cc * 4;
+    if (x) {
+      if (off + 4 > buf.length) return;
+      const extLen = buf.readUInt16BE(off + 2);
+      off += 4 + extLen * 4;
+    }
+    if (off >= buf.length) return;
+    const payload = buf.slice(off);
+    for (const c of [...this._audioConsumers]) {
+      const t = c._target;
+      if (!t || t.destroyed || t.writableEnded) { this._audioConsumers.delete(c); continue; }
+      try { t.write(payload); } catch (_) { this._audioConsumers.delete(c); }
+    }
+  }
+
+  addAudioConsumer(target) {
+    const consumer = { _target: target };
+    target._dphAudioConsumer = consumer;
+    this._audioConsumers.add(consumer);
+  }
+
+  removeAudioConsumer(target) {
+    const c = target?._dphAudioConsumer;
+    if (c) {
+      this._audioConsumers.delete(c);
+      target._dphAudioConsumer = null;
+    } else {
+      for (const c of this._audioConsumers) {
+        if (c._target === target) { this._audioConsumers.delete(c); break; }
+      }
+    }
   }
 
   getStats() {
