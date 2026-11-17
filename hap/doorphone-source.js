@@ -41,7 +41,7 @@ class DoorphoneSource extends EventEmitter {
     this.udpBound = new Promise((r) => this.udp.bind(0, '127.0.0.1', r));
     this._vLastSeq = -1; this._vLost = 0; this._vReorder = 0;
     this._videoConsumers = new Set(); // Set<WritableStream> for depacketized H264 Annex-B
-    this._audioConsumers = new Set(); // Set<WritableStream> for raw PCMU bytes (mu-law 8kHz mono)
+    this._audioConsumers = new Set(); // Set<WritableStream> for raw PCMU bytes (8 kHz mono, pre-pacing)
     this._lastKeyframe = null; // Buffer: SPS+PPS+IDR concatenated, suitable for ffmpeg decode
     this._lastKeyframeAt = 0;
     this._pendingKeyframeNals = null; // scratch buffer while assembling
@@ -341,13 +341,9 @@ class DoorphoneSource extends EventEmitter {
 
   _onAudioRtp(buf) {
     if (!Buffer.isBuffer(buf)) buf = Buffer.from(buf);
-    // Reject RTCP (packet types 200-212).
     if (buf[1] >= 200 && buf[1] <= 212) return;
     this.audioPkts++;
     if (!this._audioConsumers.size) return;
-    // Strip the RTP header + any CSRC / extension, forward the PCMU payload
-    // bytes as a raw mu-law stream. ffmpeg can read this with -f mulaw and
-    // never sees the (non-monotonic) RTP timestamps.
     const cc = buf[0] & 0x0f;
     const x = (buf[0] & 0x10) !== 0;
     let off = 12 + cc * 4;

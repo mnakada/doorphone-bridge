@@ -1,5 +1,5 @@
 Package: doorphone-hap
-Version: 0.4.0
+Version: 0.4.27
 Section: net
 Priority: optional
 Architecture: arm64

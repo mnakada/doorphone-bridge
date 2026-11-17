@@ -81,9 +81,6 @@ const source = new DoorphoneSource({
 source.on('state', s => console.log('[source] pc state:', s));
 source.on('video-ready', () => console.log('[source] first video RTP received'));
 source.on('error', e => console.error('[source] error:', e.message || e));
-source.on('remote-dc', (label, id) => console.log('[source] remote DC opened label=', label, 'id=', id));
-source.on('request-connect-sent', () => console.log('[source] Request_Connect sent on remote DC'));
-source.on('dc-message', (b) => console.log('[source] dc msg hex=', b.toString('hex').slice(0, 80)));
 
 credsReady
   .then(() => source.start())
@@ -130,7 +127,6 @@ const streamingOptions = {
   },
   audio: {
     codecs: [
-      { type: hap.AudioStreamingCodecType.OPUS, samplerate: hap.AudioStreamingSamplerate.KHZ_24 },
       { type: hap.AudioStreamingCodecType.OPUS, samplerate: hap.AudioStreamingSamplerate.KHZ_16 },
     ],
   },
