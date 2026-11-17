@@ -169,23 +169,7 @@ class StreamingDelegate {
       console.log(`[ffmpeg exit] code=${code} sig=${sig} session=${request.sessionID}`);
     });
 
-    // Tee live H264 to a debug file so we can replay sessions offline.
-    const debugPath = `/tmp/doorphone-session-${request.sessionID.slice(0,8)}.h264`;
-    const debugStream = require('fs').createWriteStream(debugPath);
-    debugStream.on('error', () => {}); // swallow EPIPE after end()
-    console.log('[debug] saving H264 to', debugPath);
-    const tee = {
-      write: (chunk) => {
-        if (ff.stdin && !ff.stdin.destroyed) {
-          try { ff.stdin.write(chunk); } catch (_) {}
-        }
-        if (!debugStream.destroyed) {
-          try { debugStream.write(chunk); } catch (_) {}
-        }
-      },
-    };
-    this.source.addVideoConsumer(tee);
-    ff.on('close', () => { try { debugStream.end(); } catch (_) {} });
+    this.source.addVideoConsumer(ff.stdin);
     this.ongoingSessions.set(request.sessionID, { ff });
     callback();
   }
@@ -193,7 +177,7 @@ class StreamingDelegate {
   stopStream(sessionID) {
     const s = this.ongoingSessions.get(sessionID);
     if (!s) return;
-    this.source.removeVideoConsumer(s.tee);
+    this.source.removeVideoConsumer(s.ff.stdin);
     try { s.ff.kill('SIGKILL'); } catch (_) {}
     this.ongoingSessions.delete(sessionID);
   }

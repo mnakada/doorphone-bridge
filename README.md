@@ -6,7 +6,7 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
 
 - Debian arm64 向け `.deb` パッケージを提供（Raspberry Pi 4/5 の 64bit OS で動作確認済み）。
 - 初回ペアリング（QR）とその後のライブ視聴まで、Node で完結（Android アプリは不要）。
-- HomeKit への追加は Web UI の QR で 1 発。
+- HomeKit への追加は Web UI の QR、またはセットアップコード。
 
 ## 現在の状態（2026-11-16）
 

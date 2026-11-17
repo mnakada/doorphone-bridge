@@ -6,19 +6,31 @@
  * Supports: Single NAL (types 1-23), STAP-A (24), FU-A (28).
  * Ignores: MTAP-16/24 (25-26), FU-B (29), STAP-B (27).
  */
+const START_CODE = Buffer.from([0, 0, 0, 1]);
+
 class H264Depay {
   constructor({ onNal }) {
     this.onNal = onNal;
-    this._fuBuf = null;
-    this._fuNalHdr = 0;
+    // FU-A reassembly: collect fragment slices (no per-fragment memcpy) and
+    // Buffer.concat them once on completion.
+    this._fuParts = null;
+    this._fuSize = 0;
     this._lastSeq = -1;
   }
 
-  _emit(nal) {
-    // nal includes the NAL header byte as first byte.
-    const out = Buffer.alloc(4 + nal.length);
-    out[0] = 0; out[1] = 0; out[2] = 0; out[3] = 1;
-    nal.copy(out, 4);
+  _emitParts(parts, size) {
+    // parts is an array of Buffer slices; prepend the Annex-B start code.
+    const out = Buffer.allocUnsafe(START_CODE.length + size);
+    START_CODE.copy(out, 0);
+    let off = START_CODE.length;
+    for (const p of parts) { p.copy(out, off); off += p.length; }
+    this.onNal(out);
+  }
+
+  _emitSingle(nal) {
+    const out = Buffer.allocUnsafe(START_CODE.length + nal.length);
+    START_CODE.copy(out, 0);
+    nal.copy(out, START_CODE.length);
     this.onNal(out);
   }
 
@@ -38,17 +50,17 @@ class H264Depay {
     const nalType = nalHdr & 0x1f;
 
     if (nalType >= 1 && nalType <= 23) {
-      this._fuBuf = null;
-      this._emit(payload);
+      this._fuParts = null; this._fuSize = 0;
+      this._emitSingle(payload);
     } else if (nalType === 24) {
       // STAP-A: aggregated NAL units, each prefixed by 2-byte size.
-      this._fuBuf = null;
+      this._fuParts = null; this._fuSize = 0;
       let off = 1;
       while (off + 2 <= payload.length) {
         const sz = payload.readUInt16BE(off);
         off += 2;
         if (off + sz > payload.length) break;
-        this._emit(payload.slice(off, off + sz));
+        this._emitSingle(payload.slice(off, off + sz));
         off += sz;
       }
     } else if (nalType === 28) {
@@ -60,18 +72,20 @@ class H264Depay {
       const origType = fuHdr & 0x1f;
       const fragment = payload.slice(2);
       if (start) {
-        const reconstructedNalHdr = (nalHdr & 0xe0) | origType;
-        this._fuBuf = Buffer.concat([Buffer.from([reconstructedNalHdr]), fragment]);
-      } else if (this._fuBuf) {
-        this._fuBuf = Buffer.concat([this._fuBuf, fragment]);
+        const reconstructedNalHdr = Buffer.from([(nalHdr & 0xe0) | origType]);
+        this._fuParts = [reconstructedNalHdr, fragment];
+        this._fuSize = reconstructedNalHdr.length + fragment.length;
+      } else if (this._fuParts) {
+        this._fuParts.push(fragment);
+        this._fuSize += fragment.length;
       }
-      if (end && this._fuBuf) {
-        this._emit(this._fuBuf);
-        this._fuBuf = null;
+      if (end && this._fuParts) {
+        this._emitParts(this._fuParts, this._fuSize);
+        this._fuParts = null; this._fuSize = 0;
       }
     } else {
       // Unsupported (MTAP, FU-B, STAP-B). Reset FU state.
-      this._fuBuf = null;
+      this._fuParts = null; this._fuSize = 0;
     }
   }
 }
