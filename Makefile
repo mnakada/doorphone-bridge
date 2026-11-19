@@ -77,14 +77,18 @@ image:
 stage:
 	@echo "== Preparing stage tree =="
 	rm -rf "$(STAGE)" "$(SCRIPTS)"
-	mkdir -p "$(STAGE)" "$(APP_DST)" "$(APP_DST)/bin" "$(PROTO_DST)" "$(SCRIPTS)"
+	mkdir -p "$(STAGE)" "$(APP_DST)" "$(APP_DST)/bin" "$(APP_DST)/web" "$(PROTO_DST)" "$(SCRIPTS)"
 	cp -a "$(PKG_SRC)/." "$(STAGE)/"
 	@echo "== Copying application sources =="
 	$(foreach f,$(HAP_SRCS),cp -a "$(ROOT)/hap/$(f)" "$(APP_DST)/";)
 	cp -a "$(ROOT)/hap/bin/doorphone-hap" "$(APP_DST)/bin/"
+	cp -a "$(ROOT)/hap/web/." "$(APP_DST)/web/"
 	cp -a "$(ROOT)/proto/." "$(PROTO_DST)/"
 	cp -a "$(PKG)/do-build.sh" "$(SCRIPTS)/do-build.sh"
 	chmod +x "$(SCRIPTS)/do-build.sh"
+	@echo "== Syncing package.json version to $(VERSION) =="
+	sed -i.bak -E 's/"version"[[:space:]]*:[[:space:]]*"[^"]*"/"version": "$(VERSION)"/' "$(APP_DST)/package.json"
+	rm -f "$(APP_DST)/package.json.bak"
 
 clean:
 	rm -rf "$(STAGE)" "$(CONTAINEROUT)" "$(SCRIPTS)"

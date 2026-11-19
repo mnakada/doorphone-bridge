@@ -8,7 +8,7 @@ message Request_Pairing {
     OS_ANDROID = 1;
     OS_IOS = 2;
   }
-  bytes  csr = 1;
+  string csr = 1;            // PEM "-----BEGIN CERTIFICATE REQUEST-----" (Java getCsr(): String)
   string mobile_device_id = 2;
   MobileOS os = 3;
   string profile_name = 4;
@@ -37,7 +37,7 @@ message Notify_AnswerPairing {
   }
   bool   result = 1;
   string unit_device_id = 2;
-  bytes  client_cert = 3;
+  string client_cert = 3;    // PEM certificate (Java getClientCert(): String)
   Reason reason = 4;
   bytes  auto_unlock_key = 10;
 }

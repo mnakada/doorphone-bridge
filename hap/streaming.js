@@ -272,6 +272,8 @@ class StreamingDelegate {
     ffV.on('close', (code, sig) => console.log(`[ffV exit] code=${code} sig=${sig} session=${request.sessionID}`));
     ffA.on('close', (code, sig) => console.log(`[ffA exit] code=${code} sig=${sig} session=${request.sessionID}`));
 
+    // Bring the base session up only while HomeKit is actually watching.
+    this.source.acquire?.(`hk:${request.sessionID}`);
     this.source.addVideoConsumer(ffV.stdin);
     this.ongoingSessions.set(request.sessionID, { ffV, ffA, pacer, proxy });
     callback();
@@ -289,6 +291,7 @@ class StreamingDelegate {
     try { s.ffV.kill('SIGKILL'); } catch (_) {}
     try { s.ffA.kill('SIGKILL'); } catch (_) {}
     this.ongoingSessions.delete(sessionID);
+    this.source.release?.(`hk:${sessionID}`);
   }
 }
 

@@ -13,6 +13,9 @@ WorkingDirectory=/opt/doorphone-hap
 ExecStart=/usr/bin/node /opt/doorphone-hap/bin/doorphone-hap serve
 Restart=on-failure
 RestartSec=5
+# The app exits 75 after a successful re-pair from the Web UI so it boots
+# again with the new cert; always restart on that code.
+RestartForceExitStatus=75
 # Runtime dirs managed by systemd (/run/doorphone-hap)
 RuntimeDirectory=doorphone-hap
 RuntimeDirectoryMode=0750

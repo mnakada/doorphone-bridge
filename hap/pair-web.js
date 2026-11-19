@@ -1,118 +1,109 @@
 /**
- * Pair-and-admin Web UI.
+ * Pair-and-admin Web UI (Vue 3 SPA).
  *
- * Mounted at http://<host>:8080/ when the accessory is running. The main use
- * case is initial pairing: the user uploads a QR image, the server runs the
- * pair flow and drops cert/key into the credentials directory.
+ * Serves hap/web/ as a static SPA and exposes a small JSON/stream API:
+ *   GET /api/state     -> current pairing / HomeKit registration state
+ *   POST /api/pair     -> multipart upload, streams pair logs back as text/plain
  *
- * No auth: this is intended for use on a trusted LAN during setup. Bind to
- * 127.0.0.1 or protect by firewall when deploying publicly.
+ * No auth: intended for a trusted LAN during setup. Bind to 127.0.0.1 or
+ * firewall-protect when deployed publicly.
  */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { EventEmitter } = require('events');
 const QRCode = require('qrcode');
 const { pair } = require('./pair');
 
-function html(body) {
-  return `<!doctype html><html><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>doorphone-hap</title>
-<style>
-  body { font: 14px/1.5 -apple-system, system-ui, Helvetica, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
-  h1 { font-size: 1.4rem; margin-bottom: .5rem; }
-  .card { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin: 1rem 0; }
-  .ok { color: #090; } .fail { color: #c00; } .muted { color: #777; }
-  code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; }
-  pre { background: #111; color: #0f0; padding: .5rem; overflow: auto; max-height: 20rem; font-size: 12px; }
-  input[type=file], input[type=text], button { font: inherit; padding: .4rem; }
-  button { background: #047; color: #fff; border: none; border-radius: 4px; padding: .5rem 1rem; cursor: pointer; }
-  button:hover { background: #069; }
-  label { display: block; margin: .5rem 0 .25rem; }
-</style>
-</head><body>${body}</body></html>`;
+const WEB_DIR = path.join(__dirname, 'web');
+let VUE_PATH = '';
+let SFC_LOADER_PATH = '';
+try { VUE_PATH = require.resolve('vue/dist/vue.runtime.global.prod.js'); } catch (_) {}
+try { SFC_LOADER_PATH = require.resolve('vue3-sfc-loader/dist/vue3-sfc-loader.js'); } catch (_) {}
+// Served to the browser so QR images are decoded client-side (decoding a
+// 12MP phone photo with Jimp on the RPi takes ~50s).
+let JSQR_PATH = '';
+try { JSQR_PATH = require.resolve('jsqr/dist/jsQR.js'); } catch (_) {}
+let PKG_VERSION = '0.0.0';
+try { PKG_VERSION = require('./package.json').version; } catch (_) {}
+
+// Shared bus: anything that affects the web-visible state (HAP pair/unpair,
+// cert file changes, base-station revocation) calls notifyStateChanged, and
+// SSE subscribers push a fresh state to connected browsers immediately.
+const stateBus = new EventEmitter();
+stateBus.setMaxListeners(100);
+
+function notifyStateChanged(reason) {
+  stateBus.emit('change', { reason: reason || 'unspecified', at: new Date().toISOString() });
 }
 
-async function homekitBlock({ accessory, cfg }) {
-  if (!accessory || !accessory._accessoryInfo) {
-    return `<div class="card"><h2>HomeKit</h2><p class="muted">Not advertised yet — service is still booting or missing credentials.</p></div>`;
-  }
-  let uri;
-  try { uri = accessory.setupURI(); } catch (_) { return ''; }
-  let svg = '';
+function isHkRegistered(accessory) {
   try {
-    svg = await QRCode.toString(uri, { type: 'svg', errorCorrectionLevel: 'Q', margin: 1, width: 220 });
-  } catch (_) {}
-  return `
-    <div class="card">
-      <h2>Add to Apple Home</h2>
-      <p>Open the Home app → "Add Accessory" → "More options" → pick <code>${cfg.accessory.name}</code>,
-         or scan this code with the Home app's camera:</p>
-      <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap">
-        <div>${svg}</div>
-        <div>
-          <p>Setup code</p>
-          <p style="font-size:1.5rem;font-family:ui-monospace,monospace;letter-spacing:2px">${cfg.accessory.pincode}</p>
-          <p class="muted" style="font-size:12px">URI: <code>${uri}</code></p>
-        </div>
-      </div>
-    </div>`;
+    const paired = accessory?._accessoryInfo?.pairedClients;
+    if (!paired) return false;
+    if (paired instanceof Map) return paired.size > 0;
+    return Object.keys(paired).length > 0;
+  } catch (_) {
+    return false;
+  }
 }
 
-function statusBlock({ paired, credsDir, unit }) {
-  const chips = ['cert.pem', 'privkey.pem', 'unit.json', 'kvs_creds.json'].map(f => {
-    const present = fs.existsSync(path.join(credsDir, f));
-    return `<span class="${present ? 'ok' : 'muted'}">${present ? 'OK' : '––'}</span> <code>${f}</code>`;
-  }).join(' &nbsp; ');
-  return `
-    <div class="card">
-      <h2>Pairing status</h2>
-      <p>${paired ? '<span class="ok">Paired.</span>' : '<span class="fail">Not paired.</span>'}</p>
-      <p class="muted">${chips}</p>
-      ${unit ? `<p class="muted">Unit <code>${unit.unitDeviceId}</code> — paired <code>${unit.pairedAt}</code></p>` : ''}
-    </div>`;
-}
-
-function pairForm() {
-  return `
-    <div class="card">
-      <h2>Pair with the base</h2>
-      <p>Press the "スマホ追加" (add device) button on the doorphone. Photograph the
-      QR code and upload the JPG/PNG below — <em>or</em> paste the decoded
-      <code>https://intercom.iot-webrtc.net/reg/...</code> URL directly.</p>
-      <form action="/pair" method="POST" enctype="multipart/form-data">
-        <label>QR image file</label>
-        <input type="file" name="qr" accept="image/*">
-        <label>— or — QR URL</label>
-        <input type="text" name="url" placeholder="https://intercom.iot-webrtc.net/reg/..." style="width:100%">
-        <label>Profile name (shown on the doorphone)</label>
-        <input type="text" name="profile_name" value="Doorphone Bridge" style="width:100%">
-        <p><button type="submit">Pair</button></p>
-      </form>
-    </div>`;
-}
-
-async function indexPage({ cfg, accessory }) {
+async function getState({ cfg, accessory }) {
   const credsDir = path.dirname(cfg.doorphone.credsPath);
   let unit = null;
-  try { unit = JSON.parse(fs.readFileSync(path.join(credsDir, 'unit.json'), 'utf8')); }
-  catch (_) {}
-  const paired =
-    fs.existsSync(path.join(credsDir, 'cert.pem')) &&
-    fs.existsSync(path.join(credsDir, 'privkey.pem'));
-  const hk = paired ? await homekitBlock({ accessory, cfg }) : '';
-  return html(`
-    <h1>doorphone-hap</h1>
-    ${statusBlock({ paired, credsDir, unit })}
-    ${hk}
-    ${pairForm()}
-    <p class="muted">After pairing with the doorphone, restart the service:
-      <code>sudo systemctl restart doorphone-hap</code></p>
-  `);
+  try {
+    unit = JSON.parse(fs.readFileSync(path.join(credsDir, 'unit.json'), 'utf8'));
+  } catch (_) {}
+  const files = {};
+  for (const f of ['cert.pem', 'privkey.pem', 'unit.json', 'kvs_creds.json']) {
+    files[f] = fs.existsSync(path.join(credsDir, f));
+  }
+  const paired = !!(files['cert.pem'] && files['privkey.pem']);
+
+  let setupUri = '';
+  let setupQrSvg = '';
+  if (accessory && accessory._accessoryInfo) {
+    try { setupUri = accessory.setupURI(); } catch (_) {}
+    if (setupUri) {
+      try {
+        setupQrSvg = await QRCode.toString(setupUri, {
+          type: 'svg', errorCorrectionLevel: 'Q', margin: 1, width: 220,
+        });
+      } catch (_) {}
+    }
+  }
+
+  return {
+    appName: 'Doorphone Bridge',
+    version: PKG_VERSION,
+    paired,
+    hkConnected: isHkRegistered(accessory),
+    accessoryName: cfg.accessory.name,
+    pincode: cfg.accessory.pincode,
+    setupUri,
+    setupQrSvg,
+    files,
+    unit,
+  };
 }
 
-// Rudimentary multipart/form-data parser: just enough to pull one file + text fields.
+const STATIC_MAP = {
+  '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
+  '/index.html': { file: 'index.html', type: 'text/html; charset=utf-8' },
+  '/app.js': { file: 'app.js', type: 'application/javascript; charset=utf-8' },
+  '/App.vue': { file: 'App.vue', type: 'text/plain; charset=utf-8' },
+};
+
+function sendFile(res, filePath, type) {
+  fs.stat(filePath, (err, st) => {
+    if (err || !st.isFile()) { res.writeHead(404); res.end('not found'); return; }
+    res.writeHead(200, { 'Content-Type': type, 'Content-Length': st.size });
+    fs.createReadStream(filePath).on('error', () => res.destroy()).pipe(res);
+  });
+}
+
+// Rudimentary multipart/form-data parser: enough to pull one file + text fields.
 function parseMultipart(body, boundary) {
   const parts = {};
   const b = Buffer.from(body);
@@ -125,11 +116,10 @@ function parseMultipart(body, boundary) {
     const nextSep = b.indexOf(sep, partStart);
     if (nextSep < 0) break;
     const part = b.slice(partStart, nextSep);
-    // Strip leading CRLF after boundary.
-    let headerEnd = part.indexOf(Buffer.from('\r\n\r\n'));
+    const headerEnd = part.indexOf(Buffer.from('\r\n\r\n'));
     if (headerEnd < 0) { i = nextSep; continue; }
     const headers = part.slice(0, headerEnd).toString('utf8');
-    const content = part.slice(headerEnd + 4, part.length - 2); // trim trailing \r\n
+    const content = part.slice(headerEnd + 4, part.length - 2);
     const nameMatch = headers.match(/name="([^"]+)"/);
     const filenameMatch = headers.match(/filename="([^"]*)"/);
     if (nameMatch) {
@@ -142,65 +132,124 @@ function parseMultipart(body, boundary) {
   return parts;
 }
 
+async function handlePair({ req, res, cfg, logger, onPaired }) {
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const body = Buffer.concat(chunks);
+  const ctype = req.headers['content-type'] || '';
+  const boundary = ctype.match(/boundary=(.+)$/)?.[1];
+  if (!boundary) { res.writeHead(400); res.end('expected multipart/form-data'); return; }
+  const fields = parseMultipart(body, boundary);
+
+  let input = null;
+  const tmpPath = `/tmp/_pair_upload_${crypto.randomBytes(4).toString('hex')}`;
+  if (fields.qr?.data && fields.qr.filename) {
+    fs.writeFileSync(tmpPath, fields.qr.data);
+    input = tmpPath;
+  } else if (fields.url && String(fields.url).startsWith('http')) {
+    input = String(fields.url);
+  } else {
+    res.writeHead(400); res.end('QR 画像または URL が必要です'); return;
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Accel-Buffering': 'no',
+  });
+  const log = (kind, ...rest) => {
+    const line = `[${kind}] ${rest.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ')}`;
+    res.write(line + '\n');
+    logger(line);
+  };
+  let ok = false;
+  try {
+    const profileName = String(fields.profile_name || 'Doorphone Bridge');
+    const outDir = path.dirname(cfg.doorphone.credsPath);
+    const info = await pair({ input, outDir, profileName, logger: log });
+    res.write('RESULT_OK ' + JSON.stringify({ unitDeviceId: info.unitDeviceId }) + '\n');
+    ok = true;
+  } catch (e) {
+    res.write('RESULT_FAIL ' + (e.message || String(e)) + '\n');
+    logger('[pair-failed] ' + (e.message || String(e)));
+  } finally {
+    try { if (input === tmpPath) fs.unlinkSync(tmpPath); } catch (_) {}
+    res.end();
+  }
+  // New cert/unit on disk — let the host restart so the refresher and the
+  // WebRTC source pick them up. Done after res.end() so the browser gets
+  // RESULT_OK before the server goes away.
+  if (ok && typeof onPaired === 'function') {
+    res.on('finish', () => onPaired());
+    if (res.writableFinished) onPaired();
+  }
+}
+
 function startWebUi(opts) {
   const { cfg, host = '0.0.0.0', port = 8080, logger = console.log } = opts;
   const getAccessory = () => (typeof opts.accessory === 'function' ? opts.accessory() : opts.accessory);
+
   const server = http.createServer(async (req, res) => {
     try {
-      if (req.url === '/' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(await indexPage({ cfg, accessory: getAccessory() }));
-        return;
+      const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+      if (req.method === 'GET') {
+        const spec = STATIC_MAP[url.pathname];
+        if (spec) return sendFile(res, path.join(WEB_DIR, spec.file), spec.type);
+        if (url.pathname === '/vue.runtime.global.prod.js') {
+          if (!VUE_PATH) { res.writeHead(500); res.end('vue not installed'); return; }
+          return sendFile(res, VUE_PATH, 'application/javascript; charset=utf-8');
+        }
+        if (url.pathname === '/vue3-sfc-loader.js') {
+          if (!SFC_LOADER_PATH) { res.writeHead(500); res.end('vue3-sfc-loader not installed'); return; }
+          return sendFile(res, SFC_LOADER_PATH, 'application/javascript; charset=utf-8');
+        }
+        if (url.pathname === '/jsqr.js') {
+          if (!JSQR_PATH) { res.writeHead(500); res.end('jsqr not installed'); return; }
+          return sendFile(res, JSQR_PATH, 'application/javascript; charset=utf-8');
+        }
+        if (url.pathname === '/api/state') {
+          try { opts.onStateQuery?.(); } catch (_) {}
+          const s = await getState({ cfg, accessory: getAccessory() });
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+          return res.end(JSON.stringify(s));
+        }
+        if (url.pathname === '/api/events') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+          });
+          const send = async (reason) => {
+            try {
+              const s = await getState({ cfg, accessory: getAccessory() });
+              res.write(`event: state\ndata: ${JSON.stringify({ ...s, _reason: reason })}\n\n`);
+            } catch (_) {}
+          };
+          const onChange = (info) => send(info.reason);
+          stateBus.on('change', onChange);
+          // Someone is looking: ask the base whether we're still registered
+          // so an unpair shows up within seconds (result arrives via the bus).
+          try { opts.onStateQuery?.(); } catch (_) {}
+          send('init');
+          const hb = setInterval(() => { try { res.write(': hb\n\n'); } catch (_) {} }, 20_000);
+          req.on('close', () => { stateBus.off('change', onChange); clearInterval(hb); });
+          return;
+        }
       }
-      if (req.url === '/pair' && req.method === 'POST') {
-        const chunks = [];
-        for await (const c of req) chunks.push(c);
-        const body = Buffer.concat(chunks);
-        const ctype = req.headers['content-type'] || '';
-        const boundary = ctype.match(/boundary=(.+)$/)?.[1];
-        if (!boundary) {
-          res.writeHead(400); res.end('expected multipart/form-data'); return;
-        }
-        const fields = parseMultipart(body, boundary);
-        let input = null;
-        const tmpPath = `/tmp/_pair_upload_${crypto.randomBytes(4).toString('hex')}`;
-        if (fields.qr?.data && fields.qr.filename) {
-          fs.writeFileSync(tmpPath, fields.qr.data);
-          input = tmpPath;
-        } else if (fields.url && fields.url.startsWith('http')) {
-          input = fields.url;
-        } else {
-          res.writeHead(400); res.end('either an image or a URL is required'); return;
-        }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.write(html('<h1>Pairing…</h1><pre id="log">starting…\n</pre><script>const l=document.getElementById("log");new EventSource("/pair-stream?rid=' + encodeURIComponent(res._pairRid = crypto.randomUUID()) + '").onmessage=e=>{l.textContent+=e.data+"\\n";l.scrollTop=l.scrollHeight;};</script>').replace('</body>', ''));
-        // Simpler: run inline and stream logs via chunked response.
-        const log = (kind, ...rest) => {
-          const line = `[${kind}] ${rest.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ')}`;
-          res.write(`<script>document.getElementById('log').textContent+=${JSON.stringify(line + '\n')}</script>`);
-          logger(line);
-        };
-        try {
-          const profileName = fields.profile_name || 'Doorphone Bridge';
-          const outDir = path.dirname(cfg.doorphone.credsPath);
-          const info = await pair({ input, outDir, profileName, logger: log });
-          res.write(`<h2 class="ok">Paired ✓</h2><p>Unit: <code>${info.unitDeviceId}</code></p><p><a href="/">back</a></p>`);
-          res.write('<p>Restart the service: <code>sudo systemctl restart doorphone-hap</code></p>');
-        } catch (e) {
-          res.write(`<h2 class="fail">Failed: ${e.message || e}</h2><p><a href="/">back</a></p>`);
-        } finally {
-          try { if (input === tmpPath) fs.unlinkSync(tmpPath); } catch (_) {}
-          res.end('</body></html>');
-        }
-        return;
+      if (req.method === 'POST' && url.pathname === '/api/pair') {
+        return handlePair({ req, res, cfg, logger, onPaired: opts.onPaired });
       }
+
       res.writeHead(404); res.end('not found');
     } catch (e) {
       try { res.writeHead(500); res.end(String(e.message || e)); } catch (_) {}
     }
   });
+
   server.listen(port, host, () => logger(`web UI http://${host}:${port}`));
   return server;
 }
 
-module.exports = { startWebUi };
+module.exports = { startWebUi, notifyStateChanged };

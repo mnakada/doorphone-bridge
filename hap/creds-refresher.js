@@ -32,7 +32,34 @@ class CredsRefresher extends EventEmitter {
     this.appId = appId;
     this.client = null;
     this.refreshTimer = null;
+    // Base-station revocation detection: if we publish GET_SIGNALING_CHANNEL
+    // and the base doesn't reply within pendingTimeoutMs, that's a "stale"
+    // request. staleThreshold consecutive stales → emit 'revoked' (the base
+    // has forgotten us; our cert is effectively dead).
+    this.pendingTimeoutMs = 120_000;
+    this.staleThreshold = 3;
+    this.staleCount = 0;
+    this.pendingTimer = null;
     this.stopped = false;
+    this.revoked = false;
+    // Unpairing on the base is never pushed to us; we only learn about it
+    // when a GET_SIGNALING_CHANNEL comes back NOT_REGISTERED. Ask every
+    // checkIntervalMs (also keeps creds fresh), plus on demand via checkNow().
+    this.checkIntervalMs = 60_000;
+    this.checkTimer = null;
+    this.minCheckGapMs = 10_000;
+    this._lastRequestAt = 0;
+    this._quietPending = false;
+    this._ctx = null; // { unit, clientId, topic } once connected
+  }
+
+  // Ask the base right now whether we're still registered (rate-limited).
+  // Used when someone opens the Web UI so an unpair shows up within seconds.
+  checkNow() {
+    if (this.stopped || this.revoked || !this._ctx || !this.client?.connected) return;
+    if (this.pendingTimer) return; // a request is already in flight
+    if (Date.now() - this._lastRequestAt < this.minCheckGapMs) return;
+    this._requestCreds(this._ctx.unit, this._ctx.clientId, this._ctx.topic, { quiet: true });
   }
 
   _loadUnit() {
@@ -77,9 +104,14 @@ class CredsRefresher extends EventEmitter {
       this.client.subscribe(topic, { qos: 0 }, (err) => {
         if (err) return this.emit('error', err);
         this.emit('log', `subscribed to ${topic}`);
+        this._ctx = { unit, clientId, topic };
         this._requestCreds(unit, clientId, topic);
       });
     });
+    if (!this.checkTimer) {
+      this.checkTimer = setInterval(() => this.checkNow(), this.checkIntervalMs);
+      this.checkTimer.unref?.();
+    }
 
     this.client.on('message', (_topic, payload) => {
       this._onMessage(payload.toString('utf8'), clientId);
@@ -90,7 +122,10 @@ class CredsRefresher extends EventEmitter {
     this.client.on('close', () => this.emit('log', 'MQTT closed'));
   }
 
-  _requestCreds(unit, clientId, topic) {
+  _requestCreds(unit, clientId, topic, { quiet = false } = {}) {
+    this._lastRequestAt = Date.now();
+    this._quietPending = quiet;
+    this._armPendingTimer(unit, clientId, topic);
     const msg = JSON.stringify({
       to: unit.unitDeviceId,
       from: clientId,
@@ -98,8 +133,30 @@ class CredsRefresher extends EventEmitter {
     });
     this.client.publish(topic, msg, { qos: 0 }, (err) => {
       if (err) this.emit('error', err);
-      else this.emit('log', 'GET_SIGNALING_CHANNEL sent');
+      else if (!quiet) this.emit('log', 'GET_SIGNALING_CHANNEL sent');
     });
+  }
+
+  _armPendingTimer(unit, clientId, topic) {
+    if (this.pendingTimer) clearTimeout(this.pendingTimer);
+    this.pendingTimer = setTimeout(() => this._onStale(unit, clientId, topic), this.pendingTimeoutMs);
+    this.pendingTimer.unref?.();
+  }
+
+  _clearPendingTimer() {
+    if (this.pendingTimer) { clearTimeout(this.pendingTimer); this.pendingTimer = null; }
+  }
+
+  _onStale(unit, clientId, topic) {
+    this.pendingTimer = null;
+    this.staleCount++;
+    this.emit('log', `GET_SIGNALING_CHANNEL unanswered after ${this.pendingTimeoutMs / 1000}s (${this.staleCount}/${this.staleThreshold})`);
+    if (this.staleCount >= this.staleThreshold) {
+      this._revoke('base station no longer answers — likely revoked');
+      return;
+    }
+    if (this.stopped || !this.client?.connected) return;
+    this._requestCreds(unit, clientId, topic);
   }
 
   _onMessage(text, clientId) {
@@ -111,14 +168,24 @@ class CredsRefresher extends EventEmitter {
     if (!data || data.command !== 'NOTIFY_KVS_CREDENTIAL') return;
     let payload = data.payload;
     if (typeof payload === 'string') { try { payload = JSON.parse(payload); } catch (_) { return; } }
+    if (payload?.error === 'NOT_REGISTERED') {
+      // The base explicitly says we were unregistered (unpaired from the
+      // doorphone side) — no need to wait for the stale-timeout path.
+      this._revoke('base station replied NOT_REGISTERED — unpaired');
+      return;
+    }
     if (!payload?.channelName) {
       this.emit('log', 'NOTIFY_KVS_CREDENTIAL missing channelName: ' + JSON.stringify(payload).slice(0, 200));
       return;
     }
+    this._clearPendingTimer();
+    this.staleCount = 0;
     try {
       fs.writeFileSync(this.credsPath, JSON.stringify(payload, null, 2), { mode: 0o640 });
       this.emit('creds', payload);
-      this.emit('log', `creds refreshed, expires ${payload.Expiration}`);
+      // Periodic registration checks also refresh creds; don't log each one.
+      if (!this._quietPending) this.emit('log', `creds refreshed, expires ${payload.Expiration}`);
+      this._quietPending = false;
     } catch (e) {
       this.emit('error', e);
     }
@@ -142,9 +209,20 @@ class CredsRefresher extends EventEmitter {
     this.refreshTimer.unref?.();
   }
 
+  _revoke(reason) {
+    if (this.revoked) return;
+    this.revoked = true;
+    this.emit('log', reason);
+    // The cert is dead; stop MQTT so we don't keep reconnecting with it.
+    this.stop();
+    this.emit('revoked');
+  }
+
   stop() {
     this.stopped = true;
+    if (this.checkTimer) { clearInterval(this.checkTimer); this.checkTimer = null; }
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    this._clearPendingTimer();
     try { this.client?.end(true); } catch (_) {}
     this.client = null;
   }

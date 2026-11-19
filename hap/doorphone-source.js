@@ -28,6 +28,9 @@ const REGION = 'ap-northeast-1';
 
 // Request_Connect(DEVICE_DOOR, devno=0, TYPE_MONITOR) with request_id=1 version=VERSION_1
 const REQUEST_CONNECT = Buffer.from('08011001a2060408012002', 'hex');
+// Request_Disconnect with request_id=2 version=VERSION_1. Sent before closing
+// so the base drops its "スマホで使用中" (in use by phone) state immediately.
+const REQUEST_DISCONNECT = Buffer.from('08021001c20600', 'hex');
 
 class DoorphoneSource extends EventEmitter {
   constructor({ credsPath, videoHost = '127.0.0.1', videoPort = 5004, audioPort = 5006, viewerId }) {
@@ -91,11 +94,82 @@ class DoorphoneSource extends EventEmitter {
     this.firstVideoReceivedAt = 0;
     this.videoPkts = 0;
     this.audioPkts = 0;
+
+    // On-demand session management. While connected, the base shows "in use
+    // by phone" and its own monitor can't be opened, so we only hold the
+    // session while someone (a HomeKit stream) needs it.
+    this._users = new Set();
+    this.idleTimeoutMs = 15000; // grace after the last user, HomeKit restarts streams often
+    this._idleTimer = null;
+    this._reconnectTimer = null;
+    this._stopping = false;
+  }
+
+  // Take a reference on the live session; connects if not already.
+  acquire(tag) {
+    this._users.add(tag);
+    if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
+    if (this.state === 'idle') {
+      this.emit('log', `connect (user=${tag})`);
+      this._startOrRetry();
+    }
+  }
+
+  // start() can fail transiently — e.g. right after a re-pair the creds file
+  // isn't written yet. Reset to idle and retry while someone still wants us.
+  _startOrRetry() {
+    this.start().catch(e => {
+      this.emit('error', e);
+      if (this.pc) { try { this.pc.close(); } catch (_) {} this.pc = null; }
+      try { this.client?.close(); } catch (_) {}
+      this.client = null;
+      this.state = 'idle';
+      if (this._users.size && !this._reconnectTimer && !this._stopping) {
+        this._reconnectTimer = setTimeout(() => {
+          this._reconnectTimer = null;
+          if (this._users.size && this.state === 'idle') {
+            this.emit('log', 'retrying connect');
+            this._startOrRetry();
+          }
+        }, 3000);
+      }
+    });
+  }
+
+  // Drop a reference; disconnects after idleTimeoutMs once nobody is left.
+  release(tag) {
+    this._users.delete(tag);
+    if (this._users.size || this._idleTimer) return;
+    this._idleTimer = setTimeout(() => {
+      this._idleTimer = null;
+      if (this._users.size) return;
+      this.emit('log', `idle ${this.idleTimeoutMs / 1000}s — disconnecting`);
+      this.disconnect();
+    }, this.idleTimeoutMs);
+    this._idleTimer.unref?.();
+  }
+
+  // Polite teardown: tell the base we're done, then close the PC.
+  disconnect() {
+    try { this.selfDc?.sendMessageBinary(REQUEST_DISCONNECT); } catch (_) {}
+    // Give SCTP a moment to flush the message before closing.
+    setTimeout(() => {
+      if (this._users.size) {
+        // A stream started during the flush window — keep the session and
+        // re-arm the base instead of closing.
+        try { this.selfDc?.sendMessageBinary(REQUEST_CONNECT); } catch (_) {}
+        return;
+      }
+      this.stop();
+    }, 300);
   }
 
   async start() {
     if (this.state === 'connecting' || this.state === 'connected') return;
     this.state = 'connecting';
+    this._stopping = false;
+    this.firstVideoReceivedAt = 0;
+    this._vLastSeq = -1;
     await this.udpBound;
 
     const creds = JSON.parse(fs.readFileSync(this.credsPath, 'utf8'));
@@ -129,11 +203,23 @@ class DoorphoneSource extends EventEmitter {
     // node-datachannel auto-negotiates immediately and would otherwise emit
     // the offer before we're listening.
     pc.onStateChange(s => {
+      // Ignore late events from a PC we've already replaced/closed.
+      if (pc !== this.pc) return;
       this.emit('state', s);
       if (s === 'connected') this.state = 'connected';
       if (s === 'closed' || s === 'failed' || s === 'disconnected') {
         this.state = 'idle';
         this.emit('disconnected');
+        if (!this._stopping && this._users.size && !this._reconnectTimer) {
+          // Dropped by the base / network while a stream is running.
+          this._reconnectTimer = setTimeout(() => {
+            this._reconnectTimer = null;
+            if (this._users.size && this.state === 'idle') {
+              this.emit('log', 'reconnecting');
+              this._startOrRetry();
+            }
+          }, 2000);
+        }
       }
     });
 
@@ -395,6 +481,9 @@ class DoorphoneSource extends EventEmitter {
   }
 
   stop() {
+    this._stopping = true;
+    if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     this.state = 'idle';
     clearInterval(this._audioInterval); this._audioInterval = null;
     clearInterval(this._kfInterval); this._kfInterval = null;

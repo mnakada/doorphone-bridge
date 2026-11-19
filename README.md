@@ -10,25 +10,25 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
 
 ## 現在の状態（2026-11-17）
 
-- ✅ 親機との KVS WebRTC セッション確立 / H264 映像受信 / HomeKit SRTP への再パッケージ
+- ✅ ドアホン親機との KVS WebRTC セッション確立 / H264 映像受信 / HomeKit SRTP への再パッケージ
 - ✅ `-c:v copy` パススルーで iPhone / Apple TV 側の H264 デコードが安定
 - ✅ live stream のオープン・クローズ・再オープンで切断しないよう調整済み
-- ✅ **片方向音声 (親機 → iPhone)** — PCMU を Opus 16kHz に再エンコード、
+- ✅ **片方向音声 (ドアホン親機 → iPhone)** — PCMU を Opus 16kHz に再エンコード、
   RTP timestamp を HomeKit 仕様に書き換えた上で自前 SRTP で送信
 - ✅ MQTT mTLS 経由の AWS 一時クレデンシャル自動更新（10分ごと）
 - ✅ Web UI (`:8080`) でペアリング状態 / HomeKit setup QR / Setup code を表示
 - ✅ systemd ユニット、`.deb` パッケージ、`doorphone-hap pair` CLI
 - 🔎 Web UI からの QR ペアリングは実装済み・**実機未検証**（新規端末追加時のみ必要）
-- ❌ 双方向音声・ドアベル通知は未実装（本リポジトリでは scope 外）
+- ❌ 双方向音声・ドアベル通知はscope 外
 - ❌ snapshot は live ストリーム中はキャッシュから返す（ライブ停止中は last-known）
 
 ## アーキテクチャ
 
 ```
-                       ┌─────────────────┐
-                       │ Panasonic 親機  │
-                       │  (VL-X70AH)     │
-                       └────┬────────────┘
+                   ┌─────────────────┐
+                   │ Panasonic 親機　 │
+                   │  (VL-X70AH)     │
+                   └────────┬────────┘
                             │ (LAN)
                             │ AWS IoT MQTT (mTLS)
                             │   GET_SIGNALING_CHANNEL
@@ -42,16 +42,16 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
     ┌──────────────────────────────────────────────────────────┐
     │                     doorphone-hap                        │
     │                                                          │
-    │  ┌──────────────┐    ┌──────────────────────────────┐   │
-    │  │ creds-       │    │ doorphone-source             │   │
-    │  │ refresher    │    │ (node-datachannel)           │   │
-    │  │ (mqtt mTLS)  │    │  → H264 depacketize + PCMU   │   │
-    │  └──────────────┘    └────┬──────────────────┬──────┘   │
+    │  ┌──────────────┐    ┌──────────────────────────────┐    │
+    │  │ creds-       │    │ doorphone-source             │    │
+    │  │ refresher    │    │ (node-datachannel)           │    │
+    │  │ (mqtt mTLS)  │    │  → H264 depacketize + PCMU   │    │
+    │  └──────────────┘    └────┬──────────────────┬──────┘    │
     │                           │ H264 Annex-B     │ PCMU 8k   │
     │                           ▼                  ▼           │
     │                   ┌───────────────┐   ┌──────────────┐   │
     │                   │ ffmpeg(V)     │   │ Node pacer   │   │
-    │                   │  -c:v copy    │   │ (hrtime, 20ms)│  │
+    │                   │  -c:v copy    │   │(hrtime, 20ms)│   │
     │                   └────┬──────────┘   └────┬─────────┘   │
     │                        │ SRTP(V)           │ mulaw 20ms  │
     │                        │                   ▼             │
@@ -62,17 +62,17 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
     │                        │                   │ plain RTP(A)│
     │                        │                   ▼             │
     │                        │              ┌───────────────┐  │
-    │  ┌──────────────┐      │              │ Node SRTP proxy│ │
+    │  ┌──────────────┐      │              │Node SRTP proxy│  │
     │  │ pair-web     │      │              │ (TS rewrite + │  │
     │  │ (:8080) QR   │      │              │  AES_CM+HMAC) │  │
     │  └───────┬──────┘      │              └────┬──────────┘  │
     │          │             │                   │ SRTP(A)     │
     │          │             ▼                   ▼             │
-    │          │          ┌──────────────────────────────┐    │
-    │          │          │  HAP-NodeJS (CameraController)│    │
-    │          │          └────┬─────────────────────────┘    │
+    │          │          ┌──────────────────────────────┐     │
+    │          │          │ HAP-NodeJS (CameraController)│     │
+    │          │          └────┬─────────────────────────┘     │
     │          │               │ mDNS _hap._tcp                │
-    └──────────┼───────────────┼─────────────────────────────── ┘
+    └──────────┼───────────────┼───────────────────────────────┘
                │               │
           Web  │               │ HAP (TLS) + SRTP (UDP)
           UI   │               │
@@ -86,7 +86,7 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
 doorphone/
 ├── hap/                    # Node.js アクセサリ本体
 │   ├── accessory.js        # HAP-NodeJS + ブート
-│   ├── doorphone-source.js # 親機との WebRTC + H264 depacketize + PCMU 分配
+│   ├── doorphone-source.js # ドアホン親機との WebRTC + H264 depacketize + PCMU 分配
 │   ├── streaming.js        # HomeKit CameraStreamingDelegate + 音声 SRTP proxy
 │   ├── srtp.js             # 自前 AES_CM_128_HMAC_SHA1_80 (Opus TS 書換え用)
 │   ├── creds-refresher.js  # MQTT mTLS で temp creds 更新
@@ -101,7 +101,7 @@ doorphone/
 │   ├── do-build.sh         # ホスト側呼び出し
 │   └── scripts-mount/do-build.sh  # コンテナ内で dpkg-deb --build
 ├── Makefile                # ビルド entry point (container 自動検出)
-├── proto/                  # 親機 ↔ 我々の Protobuf (jadx 復元)
+├── proto/                  # ドアホン親機 ↔ 我々の Protobuf (jadx 復元)
 │   ├── webrtc_if.proto
 │   ├── call.proto
 │   └── pairing.proto
@@ -125,7 +125,7 @@ doorphone/
   - **Linux (x86_64 or arm64)**: `docker` or `podman`、
     x86_64 で arm64 .deb を作るときは `qemu-user-static` も必要
     （Debian/Ubuntu: `sudo apt install qemu-user-static binfmt-support`）
-- 親機と RPi が同じ LAN にある
+- ドアホン親機と RPi が同じ LAN にある
 
 ### ビルド
 
@@ -148,7 +148,7 @@ ssh user@rpi.local 'sudo apt install -y /tmp/doorphone-hap_*_arm64.deb'
 
 ### HMAC 鍵の配置 (初回のみ)
 
-本リポジトリには親機の `/reg` エンドポイント認証用の HMAC 鍵が含まれて
+本リポジトリにはドアホン親機の `/reg` エンドポイント認証用の HMAC 鍵が含まれて
 いません。Panasonic アプリから自分で抽出して
 `/etc/doorphone-hap/hmac.key` に置く必要があります:
 
@@ -225,7 +225,7 @@ sudo doorphone-hap version
 実装中に判明した「罠」:
 
 1. **Request_Connect はこちら側の DC へ** — `node-datachannel` の `pc.onDataChannel` で受けた
-   親機側 DC (`MasterToViewer`) にコマンドを書いても無視される。自分で作成した
+   ドアホン親機側 DC (`MasterToViewer`) にコマンドを書いても無視される。自分で作成した
    `ViewerToMaster` DC に投げる。
 2. **auto-negotiation タイミング** — `pc.onLocalDescription` などは必ず `addTrack` /
    `createDataChannel` の**前**に登録する。
@@ -235,12 +235,12 @@ sudo doorphone-hap version
    `CN=IoT ApplicationOU=Organizational UnitO=OrganizationC=Country` という
    「OU/O/C が CN の中に埋め込まれた」単一 CN を使う。@peculiar/x509 で手で合わせる。
 5. **ffmpeg は `-c:v copy` が鉄板** — iOS Home 側の H264 デコーダは再エンコードで同期を外す。
-   親機が送る Baseline 42e01f をそのまま SRTP に詰め直すだけで通る。
+   ドアホン親機が送る Baseline 42e01f をそのまま SRTP に詰め直すだけで通る。
 6. **HomeKit の `reconfigure` を無視する** — 送られるたびに ffmpeg を落とすと ~27 秒で
    live が切れる。何もせず ack だけ返す。
-7. **live 再接続時は Request_Connect を再送** — 親機は 1 回目のセッションが閉じると
+7. **live 再接続時は Request_Connect を再送** — ドアホン親機は 1 回目のセッションが閉じると
    RTP を止める。新しい consumer が付いたタイミングで DC へ Request_Connect を再送して
-   親機を「再武装」する。
+   ドアホン親機を「再武装」する。
 8. **keyframe gating** — 新 consumer は次の IDR が来るまで NAL をドロップし、IDR 到着時に
    cached SPS/PPS + IDR をまとめて書き出す。これで新規 ffmpeg のデコード同期が早い。
 9. **snapshot は keyframe キャッシュから** — 常駐 ffmpeg が H264 を食うと live stream の
@@ -257,14 +257,14 @@ sudo doorphone-hap version
 11. **音声 pacer は hrtime ベースで** — ffmpeg の `-re` や lavfi の native rate pacing は
     ~3% 遅く (測定: 48.5 pkts/s vs 50) 時間とともに iPhone のジッタバッファが枯れる。
     Node 側で `process.hrtime.bigint()` を基準にドリフト補正しつつ 20 ms 刻みで ffmpeg
-    stdin に 160 B の mulaw を書き込むと、親機 VAD gap も mulaw silence (0xFF) で埋めた
+    stdin に 160 B の mulaw を書き込むと、ドアホン親機 VAD gap も mulaw silence (0xFF) で埋めた
     まま rock-solid な 8000 B/s を維持できる。
 
 ## 既知の制約
 
 - `kvs_creds.json` は 10 分で失効する。Node 版 refresher が自動再取得するが、起動直後の
   数秒間は creds が無く source は待機状態になる（ログ `[creds] creds refreshed` 後に接続）。
-- RPi 1 台で 1 つの親機のみ。複数親機対応は未実装（config の分割から必要）。
+- RPi 1 台で 1 つのドアホン親機のみ。複数親機対応は未実装（config の分割から必要）。
 - Snapshot は最後に live が開いていた時点の映像を 5 秒キャッシュして返す。never-live
   起動直後は 1x1 グレーのプレースホルダ。
 
@@ -279,5 +279,5 @@ sudo doorphone-hap version
 
 ## ライセンス
 
-私的利用のみ。親機のプロトコルは静的解析由来で Panasonic のサービス仕様としては
+私的利用のみ。ドアホン親機のプロトコルは静的解析由来で Panasonic のサービス仕様としては
 公開されていない。

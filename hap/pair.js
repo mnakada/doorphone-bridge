@@ -21,7 +21,7 @@ const { spawn } = require('child_process');
 require('reflect-metadata'); // required by @peculiar/x509 via tsyringe
 const protobuf = require('protobufjs');
 const jsQR = require('jsqr');
-const Jimp = require('jimp');
+const { Jimp } = require('jimp'); // jimp >=1.0: named export, no default
 
 // Node 18+ exposes WebCrypto natively; @peculiar/x509 is ESM-only so we load
 // it lazily via import().
@@ -69,6 +69,34 @@ function loadProto() {
 }
 
 // ---------------------------------------------------------------- qr
+// Try a few normalised sizes (by longest side) of the whole image and of a
+// centre crop. Phone photos are ~12MP: decoding at full size (or upscaled)
+// is very slow on the RPi and usually *less* reliable than ~1-2k px.
+function decodeQrBitmapVariants(img) {
+  const W = img.bitmap.width, H = img.bitmap.height;
+  const tryImage = (im) => {
+    const { bitmap } = im;
+    const code = jsQR(new Uint8ClampedArray(bitmap.data), bitmap.width, bitmap.height);
+    return code?.data || null;
+  };
+  const variants = [];
+  for (const target of [1200, 1800, 800]) variants.push({ crop: null, target });
+  // QR often fills only the middle of the frame (photo of the base's screen).
+  for (const target of [1200, 800]) variants.push({ crop: 0.6, target });
+  for (const { crop, target } of variants) {
+    let im = img.clone();
+    if (crop) {
+      const w = Math.round(W * crop), h = Math.round(H * crop);
+      im = im.crop({ x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h });
+    }
+    const longest = Math.max(im.bitmap.width, im.bitmap.height);
+    if (longest > target) im = im.scale(target / longest);
+    const text = tryImage(im);
+    if (text) return text;
+  }
+  return null;
+}
+
 async function decodeQr(input) {
   // Accept a URL string straight through; otherwise treat as image path.
   const trimmed = String(input).trim();
@@ -88,14 +116,9 @@ async function decodeQr(input) {
     imagePath = out;
   }
   const img = await Jimp.read(imagePath);
-  const tries = [1.0, 0.5, 0.3, 2.0];
-  for (const scale of tries) {
-    const c = img.clone().scale(scale);
-    const { bitmap } = c;
-    const code = jsQR(new Uint8ClampedArray(bitmap.data), bitmap.width, bitmap.height);
-    if (code?.data) return code.data;
-  }
-  throw new Error('QR code not found in image');
+  const text = decodeQrBitmapVariants(img);
+  if (text) return text;
+  throw new Error(`QR code not found in image (${img.bitmap.width}x${img.bitmap.height})`);
 }
 
 // ---------------------------------------------------------------- /reg
@@ -161,7 +184,7 @@ async function buildCsr() {
 }
 
 // ---------------------------------------------------------------- pairing session
-async function runPairingSession({ creds, channelName, peerIdPrefix, mobileDeviceId, csrBytes, profileName, deviceToken, onEvent }) {
+async function runPairingSession({ creds, channelName, peerIdPrefix, mobileDeviceId, csrPem, profileName, deviceToken, onEvent }) {
   const credentials = {
     accessKeyId: creds.AccessKeyId,
     secretAccessKey: creds.SecretAccessKey,
@@ -199,47 +222,60 @@ async function runPairingSession({ creds, channelName, peerIdPrefix, mobileDevic
   const result = new Promise((res, rej) => { resolveResult = res; rejectResult = rej; });
 
   // Timeout the whole thing.
-  const TIMEOUT_MS = 60000;
-  const timeoutHandle = setTimeout(() => rejectResult(new Error('pairing timed out after 60s')), TIMEOUT_MS);
+  const TIMEOUT_MS = 120000;
+  const timeoutHandle = setTimeout(() => rejectResult(new Error('pairing timed out after 120s')), TIMEOUT_MS);
 
   let pairingResponseOk = false;
+  let gotPairingReply = false;
 
   pc.onStateChange(s => onEvent?.('pc-state', s));
   pc.onIceStateChange(s => onEvent?.('ice-state', s));
 
+  let remoteDc = null;
   pc.onDataChannel(ch => {
-    onEvent?.('remote-dc', ch.getLabel?.());
-    ch.onMessage(m => {
-      const buf = Buffer.isBuffer(m) ? m : Buffer.from(m);
-      let msg;
-      try { msg = WebRtcMessage.decode(buf); }
-      catch (e) { onEvent?.('dc-parse-err', e.message); return; }
-      const which = WebRtcMessage.oneofs.cmd.fieldsArray.find(f => msg[f.name]);
-      onEvent?.('dc-msg', which ? which.name : 'unknown', buf.toString('hex').slice(0, 120));
-      if (msg.responsePairing) {
-        pairingResponseOk = !!msg.responsePairing.result;
-        onEvent?.('response-pairing', { result: msg.responsePairing.result, errorReason: msg.responsePairing.errorReason });
-        if (!pairingResponseOk) {
-          rejectResult(new Error(`Response_Pairing result=false errorReason=${msg.responsePairing.errorReason}`));
-        }
-      } else if (msg.notifyAnswerpairing) {
-        const n = msg.notifyAnswerpairing;
-        onEvent?.('notify-answerpairing', { result: n.result, reason: n.reason, unit: n.unitDeviceId });
-        if (!n.result) {
-          rejectResult(new Error(`Notify_AnswerPairing result=false reason=${n.reason}`));
-        } else if (!n.clientCert || !n.clientCert.length) {
-          rejectResult(new Error('Notify_AnswerPairing missing client_cert'));
-        } else {
-          clearTimeout(timeoutHandle);
-          resolveResult({
-            clientCertDer: Buffer.from(n.clientCert),
-            unitDeviceId: n.unitDeviceId,
-            autoUnlockKey: n.autoUnlockKey ? Buffer.from(n.autoUnlockKey) : null,
-          });
-        }
-      }
-    });
+    remoteDc = ch;
+    onEvent?.('remote-dc', `${ch.getLabel?.()} id=${ch.getId?.()}`);
+    // SCTP is up once the base opens its channel — start sending even if our
+    // own DC's onOpen never fires (see startSending below).
+    startSending();
+    ch.onMessage(onDcMessage);
   });
+
+  // Replies normally arrive on MasterToViewer, but accept them on our own
+  // DC too in case the base answers there.
+  function onDcMessage(m) {
+    const buf = Buffer.isBuffer(m) ? m : Buffer.from(m);
+    let msg;
+    try { msg = WebRtcMessage.decode(buf); }
+    catch (e) { onEvent?.('dc-parse-err', e.message); return; }
+    const which = WebRtcMessage.oneofs.cmd.fieldsArray.find(f => msg[f.name]);
+    onEvent?.('dc-msg', which ? which.name : 'unknown', buf.toString('hex').slice(0, 120));
+    if (msg.responsePairing || msg.notifyAnswerpairing) { gotPairingReply = true; stopResend(); }
+    if (msg.responsePairing) {
+      onEvent?.('response-pairing', { result: msg.responsePairing.result, errorReason: msg.responsePairing.errorReason });
+      // A late reply to one of our resends must not undo an earlier OK.
+      if (pairingResponseOk) return;
+      pairingResponseOk = !!msg.responsePairing.result;
+      if (!pairingResponseOk) {
+        rejectResult(new Error(`Response_Pairing result=false errorReason=${msg.responsePairing.errorReason}`));
+      }
+    } else if (msg.notifyAnswerpairing) {
+      const n = msg.notifyAnswerpairing;
+      onEvent?.('notify-answerpairing', { result: n.result, reason: n.reason, unit: n.unitDeviceId });
+      if (!n.result) {
+        rejectResult(new Error(`Notify_AnswerPairing result=false reason=${n.reason}`));
+      } else if (!n.clientCert || !n.clientCert.length) {
+        rejectResult(new Error('Notify_AnswerPairing missing client_cert'));
+      } else {
+        clearTimeout(timeoutHandle);
+        resolveResult({
+          clientCert: n.clientCert,
+          unitDeviceId: n.unitDeviceId,
+          autoUnlockKey: n.autoUnlockKey ? Buffer.from(n.autoUnlockKey) : null,
+        });
+      }
+    }
+  }
 
   // Set up the offer BEFORE adding tracks / DC so onLocalDescription fires.
   let offerSdp = null;
@@ -276,33 +312,58 @@ async function runPairingSession({ creds, channelName, peerIdPrefix, mobileDevic
   video.addH264Codec(101, 'level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f');
   pc.addTrack(video).setMediaHandler(new nd.RtcpReceivingSession());
 
-  // Self DC where we send Request_Pairing.
-  const selfDc = pc.createDataChannel('ViewerToMaster');
+  // Self DC where we send Request_Pairing (the base reads requests only from
+  // ViewerToMaster; MasterToViewer is its downstream).
+  // Matches PairingManager.h() in the Android app: Request_Pairing is sent
+  // WITHOUT request_id / version (both left at proto3 default 0).
+  const reqBuf = Buffer.from(WebRtcMessage.encode({
+    requestPairing: {
+      csr: csrPem, // PEM text, as the app sends (p021c4.a.c())
+      mobileDeviceId,
+      os: 1, // OS_ANDROID
+      profileName: profileName || 'Doorphone Bridge',
+      profileImage: new Uint8Array(0),
+      deviceToken: deviceToken || '',
+    },
+  }).finish());
+  // The app labels its DC "data-channel-of-<clientId>" (WebRTCPeerConnection.s()).
+  const selfDc = pc.createDataChannel(`data-channel-of-${viewerId}`);
+  // The base never ACKs our DCEP OPEN, so libdatachannel keeps this DC in
+  // "connecting" forever — but data on it is still delivered (SCTP SACKs
+  // confirm it). Send sparingly: a duplicate Request_Pairing may make the
+  // base abort the first one (Notify_AnswerPairing REASON_INTERRUPT).
+  //   t=0  once on our own DC (what the app does)
+  //   t=5s once on MasterToViewer, only if the base hasn't answered yet
+  let sendCount = 0;
+  const sendOn = (dc, name) => {
+    sendCount++;
+    try {
+      dc.sendMessageBinary(reqBuf);
+      onEvent?.('request-pairing-sent', `#${sendCount} on ${name} (${reqBuf.length}B, self-dc open=${selfDc.isOpen?.()})`);
+    } catch (e) {
+      onEvent?.('request-pairing-send-err', `${name}: ${e.message || String(e)}`);
+    }
+  };
+  const sendTimers = [];
+  let sendStarted = false;
+  function stopResend() {
+    for (const t of sendTimers.splice(0)) clearTimeout(t);
+  }
+  const startSending = () => {
+    if (sendStarted) return;
+    sendStarted = true;
+    sendOn(selfDc, 'self-dc');
+    sendTimers.push(setTimeout(() => {
+      if (!gotPairingReply && remoteDc) sendOn(remoteDc, 'MasterToViewer');
+    }, 5000));
+  };
   selfDc.onOpen(() => {
     onEvent?.('self-dc-open');
-    // Build Request_Pairing + wrap in WebRtcMessage.
-    const req = WebRtcMessage.encode({
-      requestId: 1,
-      version: 1,
-      requestPairing: {
-        csr: csrBytes,
-        mobileDeviceId,
-        os: 1, // OS_ANDROID
-        profileName: profileName || 'Doorphone Bridge',
-        profileImage: new Uint8Array(0),
-        deviceToken: deviceToken || '',
-      },
-    }).finish();
-    selfDc.sendMessageBinary(Buffer.from(req));
-    onEvent?.('request-pairing-sent', Buffer.from(req).toString('hex').slice(0, 120));
+    startSending();
   });
-  selfDc.onMessage(m => {
-    const buf = Buffer.isBuffer(m) ? m : Buffer.from(m);
-    let msg;
-    try { msg = WebRtcMessage.decode(buf); }
-    catch (e) { onEvent?.('self-dc-parse-err', e.message); return; }
-    onEvent?.('self-dc-msg', Object.keys(msg).filter(k => msg[k] && typeof msg[k] === 'object')[0]);
-  });
+  selfDc.onMessage(onDcMessage);
+  selfDc.onError?.(e => onEvent?.('self-dc-error', String(e)));
+  selfDc.onClosed?.(() => onEvent?.('self-dc-closed'));
 
   await offerReady;
 
@@ -337,12 +398,21 @@ async function runPairingSession({ creds, channelName, peerIdPrefix, mobileDevic
   try {
     return await result;
   } finally {
+    stopResend();
+    clearTimeout(timeoutHandle);
     try { client.close(); } catch (_) {}
     try { pc.close(); } catch (_) {}
   }
 }
 
 // ---------------------------------------------------------------- cert output
+// client_cert is a PEM string (the app hands it straight to
+// AWSIotKeystoreHelper.saveCertificateAndPrivateKey). Accept bare base64 too.
+function normalizeCertPem(cert) {
+  const s = String(cert || '').trim();
+  if (s.includes('-----BEGIN')) return s.replace(/\r\n/g, '\n') + '\n';
+  return derToPem(Buffer.from(s.replace(/\s+/g, ''), 'base64'), 'CERTIFICATE');
+}
 function derToPem(der, type = 'CERTIFICATE') {
   const b64 = der.toString('base64').match(/.{1,64}/g).join('\n');
   return `-----BEGIN ${type}-----\n${b64}\n-----END ${type}-----\n`;
@@ -367,19 +437,19 @@ async function pair({ input, outDir, profileName, hmacKeyPath, logger = () => {}
   });
 
   onEvent('generate-csr');
-  const { privPem, csrDerBytes, csrPem } = await buildCsr();
+  const { privPem, csrPem } = await buildCsr();
 
   // mobile_device_id format "SP_<uuid-v4>" per the Android app.
   const mobileDeviceId = `SP_${crypto.randomUUID()}`;
   onEvent('mobile-device-id', mobileDeviceId);
 
   onEvent('kvs-connect');
-  const { clientCertDer, unitDeviceId, autoUnlockKey } = await runPairingSession({
+  const { clientCert, unitDeviceId, autoUnlockKey } = await runPairingSession({
     creds,
     channelName: creds.channelName,
     peerIdPrefix: creds.PeerIdPrefix,
     mobileDeviceId,
-    csrBytes: csrDerBytes,
+    csrPem,
     profileName,
     deviceToken: '',
     onEvent,
@@ -387,7 +457,7 @@ async function pair({ input, outDir, profileName, hmacKeyPath, logger = () => {}
 
   onEvent('save', outDir);
   fs.mkdirSync(outDir, { recursive: true });
-  const certPem = derToPem(clientCertDer, 'CERTIFICATE');
+  const certPem = normalizeCertPem(clientCert);
   fs.writeFileSync(path.join(outDir, 'cert.pem'), certPem, { mode: 0o640 });
   fs.writeFileSync(path.join(outDir, 'privkey.pem'), privPem, { mode: 0o600 });
   fs.writeFileSync(path.join(outDir, 'csr.pem'), csrPem);
