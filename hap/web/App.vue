@@ -4,7 +4,21 @@
     <div class="version" v-if="state.version">Ver.{{ state.version }}</div>
   </div>
 
-  <main>
+  <nav class="tabs">
+    <button
+      :class="{ active: activeTab === 'records' }"
+      :disabled="!state.paired"
+      :title="state.paired ? '' : '親機とのペアリング後に利用できます'"
+      @click="tab = 'records'"
+    >録画</button>
+    <button :class="{ active: activeTab === 'status' }" @click="tab = 'status'">状態</button>
+  </nav>
+
+  <main v-if="activeTab === 'records'">
+    <Records />
+  </main>
+
+  <main v-else>
     <section v-if="restarting" class="card">
       <p class="ok">✓ ペアリング完了。新しい証明書を読み込むためサービスを再起動しています…</p>
       <p class="muted">数秒で自動的に再接続します。</p>
@@ -81,6 +95,11 @@
 
 <script setup>
 import { reactive, ref, computed, onMounted, onUnmounted } from 'vue';
+import Records from './Records.vue';
+
+// Selected tab; records is only usable once paired with the base, so the
+// effective tab falls back to status until then.
+const tab = ref('records');
 
 const state = reactive({
   appName: 'Doorphone Bridge',
@@ -106,6 +125,7 @@ const qrFile = ref(null);
 const qrUrl = ref('');
 const profileName = ref('Doorphone Bridge');
 
+const activeTab = computed(() => (state.paired ? tab.value : 'status'));
 const showPairForm = computed(() => !state.paired);
 const showHomeKitPanel = computed(() => state.paired && !state.hkConnected);
 
@@ -289,6 +309,15 @@ onUnmounted(() => {
   letter-spacing: 0.02em;
 }
 .title .version { font-size: 1.5rem; font-weight: 400; opacity: 0.9; }
+
+.tabs { display: flex; gap: 0; background: #0b3d91; padding: 0 24px; }
+.tabs button {
+  background: transparent; color: #cfdaf0; border-radius: 0; padding: .55rem 1.2rem;
+  border-bottom: 3px solid transparent; font-weight: 500;
+}
+.tabs button:hover { background: rgba(255, 255, 255, .08); }
+.tabs button.active { color: #fff; border-bottom-color: #fff; }
+.tabs button:disabled { background: transparent; color: rgba(255, 255, 255, .35); cursor: not-allowed; }
 
 main {
   max-width: 720px;

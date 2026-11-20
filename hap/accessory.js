@@ -12,6 +12,7 @@ const { StreamingDelegate } = require('./streaming');
 const { load: loadConfig, ensureDir } = require('./config');
 const { startWebUi, notifyStateChanged } = require('./pair-web');
 const { CredsRefresher } = require('./creds-refresher');
+const { RecordService } = require('./records');
 
 const { cfg, configPath } = loadConfig();
 console.log('[config] loaded from', configPath);
@@ -20,7 +21,7 @@ ensureDir(cfg.storage.persistPath);
 ensureDir(path.dirname(cfg.storage.sdpPath));
 
 // Reference held so the Web UI can call accessory.setupURI() once published.
-const webUiState = { accessory: null };
+const webUiState = { accessory: null, records: null };
 
 // Set by bootAccessory() once the creds refresher exists; the Web UI calls it
 // so a base-side unpair is detected as soon as someone opens the page.
@@ -51,6 +52,7 @@ if (cfg.web.enabled) {
   startWebUi({
     cfg,
     get accessory() { return webUiState.accessory; },
+    records: () => webUiState.records,
     host: cfg.web.host,
     port: cfg.web.port,
     logger: (...a) => console.log('[web]', ...a),
@@ -133,11 +135,25 @@ const source = new DoorphoneSource({
   videoPort: cfg.doorphone.videoPort,
   audioPort: cfg.doorphone.audioPort,
   viewerId,
+  // The base serves one session at a time; live view (HomeKit) wins.
+  beforeStart: () => records.suspend(),
 });
 source.on('state', s => console.log('[source] pc state:', s));
 source.on('video-ready', () => console.log('[source] first video RTP received'));
 source.on('error', e => console.error('[source] error:', e.message || e));
 source.on('log', m => console.log('[source]', m));
+
+// --- Recordings browser (Web UI 録画一覧) ---
+const records = new RecordService({
+  credsPath: cfg.doorphone.credsPath,
+  unitInfoPath: cfg.doorphone.unitInfoPath,
+  cacheDir: path.join(path.dirname(cfg.storage.persistPath), 'records'),
+  isLiveActive: () => source.hasLiveUsers(),
+  beforeConnect: () => source.yieldIfUnused(),
+});
+records.on('log', m => console.log('[records]', m));
+webUiState.records = records;
+shutdownHooks.push(() => records.suspend());
 
 // No connection at boot: holding a session makes the base show "スマホで使用中"
 // and locks its own monitor. StreamingDelegate acquires the source while a

@@ -33,13 +33,17 @@ const REQUEST_CONNECT = Buffer.from('08011001a2060408012002', 'hex');
 const REQUEST_DISCONNECT = Buffer.from('08021001c20600', 'hex');
 
 class DoorphoneSource extends EventEmitter {
-  constructor({ credsPath, videoHost = '127.0.0.1', videoPort = 5004, audioPort = 5006, viewerId }) {
+  constructor({ credsPath, videoHost = '127.0.0.1', videoPort = 5004, audioPort = 5006, viewerId, beforeStart }) {
     super();
     this.credsPath = credsPath;
     this.videoHost = videoHost;
     this.videoPort = videoPort;
     this.audioPort = audioPort;
     this.viewerId = viewerId || ('SP_e4e04fa2-a85a-4d94-878c-e53c90c9e1a7');
+    // Optional async hook run before connecting (e.g. make the record
+    // browser give the base up — the base serves one session at a time).
+    this.beforeStart = beforeStart || null;
+    this._preparing = false;
     this.udp = dgram.createSocket({ type: 'udp4', sendBufferSize: 4 * 1024 * 1024 });
     this.udpBound = new Promise((r) => this.udp.bind(0, '127.0.0.1', r));
     this._vLastSeq = -1; this._vLost = 0; this._vReorder = 0;
@@ -109,10 +113,31 @@ class DoorphoneSource extends EventEmitter {
   acquire(tag) {
     this._users.add(tag);
     if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
-    if (this.state === 'idle') {
+    if (this.state === 'idle' && !this._preparing) {
       this.emit('log', `connect (user=${tag})`);
-      this._startOrRetry();
+      this._preparing = true;
+      Promise.resolve()
+        .then(() => this.beforeStart?.())
+        .catch(e => this.emit('log', `beforeStart failed: ${e.message || e}`))
+        .finally(() => {
+          this._preparing = false;
+          if (this._users.size && this.state === 'idle') this._startOrRetry();
+        });
     }
+  }
+
+  // True while someone (a HomeKit stream) actually wants the live session.
+  hasLiveUsers() {
+    return this._users.size > 0 || this._preparing;
+  }
+
+  // If the session is only lingering in its idle grace period, drop it now
+  // so another client (record browser) can use the base. Resolves when done.
+  async yieldIfUnused() {
+    if (this.hasLiveUsers() || this.state === 'idle') return;
+    this.emit('log', 'yielding idle live session');
+    this.disconnect();
+    await new Promise(r => setTimeout(r, 800));
   }
 
   // start() can fail transiently — e.g. right after a re-pair the creds file

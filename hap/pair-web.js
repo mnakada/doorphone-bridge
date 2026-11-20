@@ -93,7 +93,45 @@ const STATIC_MAP = {
   '/index.html': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'application/javascript; charset=utf-8' },
   '/App.vue': { file: 'App.vue', type: 'text/plain; charset=utf-8' },
+  '/Records.vue': { file: 'Records.vue', type: 'text/plain; charset=utf-8' },
 };
+
+// Serve a file honouring HTTP Range (Safari/iOS refuses to play <video>
+// without 206 partial responses).
+function sendFileRange(req, res, filePath, type, extraHeaders = {}) {
+  fs.stat(filePath, (err, st) => {
+    if (err || !st.isFile()) { res.writeHead(404); res.end('not found'); return; }
+    const size = st.size;
+    const range = req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+    if (range) {
+      let start = range[1] === '' ? size - Number(range[2]) : Number(range[1]);
+      let end = range[1] !== '' && range[2] !== '' ? Number(range[2]) : size - 1;
+      if (range[1] === '') end = size - 1;
+      if (!(start >= 0 && start <= end && end < size)) {
+        res.writeHead(416, { 'Content-Range': `bytes */${size}` }); res.end(); return;
+      }
+      res.writeHead(206, {
+        'Content-Type': type, 'Accept-Ranges': 'bytes',
+        'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1, ...extraHeaders,
+      });
+      fs.createReadStream(filePath, { start, end }).on('error', () => res.destroy()).pipe(res);
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Content-Length': size, ...extraHeaders });
+    fs.createReadStream(filePath).on('error', () => res.destroy()).pipe(res);
+  });
+}
+
+function sendJson(res, code, obj) {
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(obj));
+}
+
+function recordsError(res, e) {
+  if (e && e.code === 'LIVE_BUSY') return sendJson(res, 409, { error: e.message, code: 'LIVE_BUSY' });
+  if (e && e.code === 'NOT_FOUND') return sendJson(res, 404, { error: '録画が見つかりません。一覧を再読み込みしてください。' });
+  return sendJson(res, 502, { error: (e && e.message) || String(e) });
+}
 
 function sendFile(res, filePath, type) {
   fs.stat(filePath, (err, st) => {
@@ -208,6 +246,28 @@ function startWebUi(opts) {
           if (!JSQR_PATH) { res.writeHead(500); res.end('jsqr not installed'); return; }
           return sendFile(res, JSQR_PATH, 'application/javascript; charset=utf-8');
         }
+        // ---- recordings (親機の録画一覧) ----
+        const records = typeof opts.records === 'function' ? opts.records() : opts.records;
+        if (url.pathname === '/api/records') {
+          if (!records) return sendJson(res, 503, { error: 'ペアリング後に利用できます' });
+          const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+          const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10) || 20));
+          try { return sendJson(res, 200, await records.list(offset, limit)); }
+          catch (e) { return recordsError(res, e); }
+        }
+        let m;
+        if ((m = /^\/api\/records\/(thumb|video)\/([A-Za-z0-9_-]+)$/.exec(url.pathname))) {
+          if (!records) return sendJson(res, 503, { error: 'ペアリング後に利用できます' });
+          try {
+            if (m[1] === 'thumb') {
+              const f = await records.thumbnail(m[2]);
+              return sendFileRange(req, res, f, 'image/jpeg', { 'Cache-Control': 'private, max-age=86400' });
+            }
+            const f = await records.video(m[2]);
+            return sendFileRange(req, res, f, 'video/mp4', { 'Cache-Control': 'private, max-age=86400' });
+          } catch (e) { return recordsError(res, e); }
+        }
+
         if (url.pathname === '/api/state') {
           try { opts.onStateQuery?.(); } catch (_) {}
           const s = await getState({ cfg, accessory: getAccessory() });
