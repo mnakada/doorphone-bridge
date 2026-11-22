@@ -230,18 +230,34 @@ class BaseRpc extends EventEmitter {
   }
 
   // Send a request. `cmd` is the oneof field name (e.g. "requestGetrecordlist").
-  request(cmd, body = {}, { timeoutMs = 10000 } = {}) {
+  //
+  // nudgeMs: re-send the same message (same requestId) every nudgeMs until
+  // the response arrives. The base's SCTP side sometimes holds a finished
+  // response until we transmit something (seen on large Request_GetFile
+  // replies: the reply only arrived once we sent the next request). A
+  // duplicate reply has no pending entry and is just emitted as 'notify'.
+  request(cmd, body = {}, { timeoutMs = 10000, nudgeMs = 0 } = {}) {
     if (this.state !== 'ready') return Promise.reject(new Error('not connected'));
     const requestId = this._nextId++;
     const buf = Buffer.from(this.types.WebRtcMessage.encode({ requestId, version: 1, [cmd]: body }).finish());
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this._pending.delete(requestId);
-        reject(new Error(`${cmd} timed out`));
-      }, timeoutMs);
-      this._pending.set(requestId, { resolve, reject, timer });
+      let nudge = null;
+      const done = () => { clearTimeout(timer); if (nudge) clearInterval(nudge); this._pending.delete(requestId); };
+      const timer = setTimeout(() => { done(); reject(new Error(`${cmd} timed out`)); }, timeoutMs);
+      this._pending.set(requestId, {
+        resolve: (v) => { done(); resolve(v); },
+        reject: (e) => { done(); reject(e); },
+        timer,
+      });
       try { this.selfDc.sendMessageBinary(buf); }
-      catch (e) { clearTimeout(timer); this._pending.delete(requestId); reject(e); }
+      catch (e) { done(); reject(e); return; }
+      if (nudgeMs > 0) {
+        nudge = setInterval(() => {
+          if (this.state !== 'ready' || !this.selfDc) return;
+          this.nudges = (this.nudges || 0) + 1;
+          try { this.selfDc.sendMessageBinary(buf); } catch (_) {}
+        }, nudgeMs);
+      }
     });
   }
 
@@ -250,7 +266,7 @@ class BaseRpc extends EventEmitter {
     const parts = [];
     let offset = 0;
     for (;;) {
-      const { body } = await this.request('requestGetfile', { file, offset, maxPayloadSize: chunk });
+      const { body } = await this.request('requestGetfile', { file, offset, maxPayloadSize: chunk }, { timeoutMs: 20000, nudgeMs: 1500 });
       if (!body || !body.result) throw new Error(`GetFile failed for ${file} at ${offset}`);
       const payload = Buffer.from(body.payload || []);
       parts.push(payload);

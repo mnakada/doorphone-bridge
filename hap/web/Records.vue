@@ -149,7 +149,11 @@ async function onVideoError() {
   // <video> gives no details; ask the endpoint for its JSON error.
   try {
     const res = await fetch(videoSrc.value, { headers: { Range: 'bytes=0-0' } });
-    if (res.ok) { videoError.value = 'このブラウザでは再生できませんでした。'; return; }
+    if (res.ok) {
+      const me = videoEl.value && videoEl.value.error;
+      videoError.value = 'このブラウザでは再生できませんでした。' + (me && me.message ? `（${me.message}）` : '');
+      return;
+    }
     const body = await res.json().catch(() => ({}));
     videoError.value = res.status === 409
       ? 'Apple Home でライブ映像を表示中のため、録画を取得できません。'
@@ -212,6 +216,7 @@ button.secondary:hover { background: #eef3fb; }
 .player video { width: 100%; display: block; background: #000; aspect-ratio: 16 / 9; }
 .player .loading, .player .fail { padding: .5rem .75rem; margin: 0; }
 .player .loading { color: #ccc; }
+.player .fail { color: #ff8a80; }
 button.close { background: transparent; font-size: 1.5rem; line-height: 1; padding: 0 .4rem; }
 button.close:hover { background: #333; }
 </style>

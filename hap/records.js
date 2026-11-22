@@ -17,6 +17,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
 const { EventEmitter } = require('events');
 const { BaseRpc } = require('./base-rpc');
 
@@ -43,14 +44,18 @@ const toId = (p) => Buffer.from(p, 'utf8').toString('base64url');
 const fromId = (id) => Buffer.from(String(id), 'base64url').toString('utf8');
 // Cache file name: "<date dir>_<file>" e.g. "26-11-20_1M121624.MP4"
 const cacheName = (p) => path.basename(path.dirname(p)) + '_' + path.basename(p);
+// Browser-safe copy of a recording: "26-11-20_1M121624.web.mp4". The raw
+// base MP4 is kept under cacheName() only until it has been sanitized.
+const webName = (p) => cacheName(p).replace(/\.mp4$/i, '') + '.web.mp4';
 
 class LiveBusyError extends Error {
   constructor() { super('ライブ映像の表示中は録画にアクセスできません'); this.code = 'LIVE_BUSY'; }
 }
 
 class RecordService extends EventEmitter {
-  constructor({ credsPath, unitInfoPath, cacheDir, isLiveActive, beforeConnect, idleMs = 20000, maxVideoCacheBytes = 500 * 1024 * 1024 }) {
+  constructor({ credsPath, unitInfoPath, cacheDir, isLiveActive, beforeConnect, ffmpegPath = 'ffmpeg', idleMs = 20000, maxVideoCacheBytes = 500 * 1024 * 1024 }) {
     super();
+    this.ffmpegPath = ffmpegPath;
     this.credsPath = credsPath;
     this.unitInfoPath = unitInfoPath;
     this.cacheDir = cacheDir;
@@ -152,7 +157,7 @@ class RecordService extends EventEmitter {
         unread: rec.readState === 'READSTATE_UNREAD' || rec.readState === 'READSTATE_NEW',
         protected: !!rec.protected,
         faceTag: rec.faceTag ? (rec.faceTag.name || FACE_LABEL[rec.faceTag.type] || '') : '',
-        videoCached: fs.existsSync(path.join(this.cacheDir, 'videos', cacheName(rec.recordFile))),
+        videoCached: fs.existsSync(path.join(this.cacheDir, 'videos', webName(rec.recordFile))),
       };
     });
     return { offset, limit, hasNext: !!body.hasNext, records };
@@ -180,26 +185,70 @@ class RecordService extends EventEmitter {
   async video(id) {
     const p = this._resolve(id, 'video');
     if (!p) { const e = new Error('unknown record'); e.code = 'NOT_FOUND'; throw e; }
-    const out = path.join(this.cacheDir, 'videos', cacheName(p));
+    const dir = path.join(this.cacheDir, 'videos');
+    const out = path.join(dir, webName(p));
     if (fs.existsSync(out)) {
       const now = new Date();
       try { fs.utimesSync(out, now, now); } catch (_) {} // LRU touch
       return out;
     }
-    const file = await this._download(p, out, 65536);
-    this._pruneVideos(out);
+    const raw = path.join(dir, cacheName(p)); // also picks up pre-0.5.2 cache entries
+    if (!fs.existsSync(raw)) await this._download(p, raw, 65536);
+    const file = await this._sanitize(raw, out);
+    this._pruneVideos(file);
     return file;
+  }
+
+  // The base's AAC encoder emits some frames with a TNS filter order above
+  // the AAC-LC limit of 12. Chrome treats such a frame as a fatal
+  // PIPELINE_ERROR_DECODE and stops the whole <video> mid-playback. Copy the
+  // H264 untouched and re-encode the (16 kHz, tiny) audio, dropping the bad
+  // frames and padding the gaps with silence so A/V sync is kept.
+  _sanitize(raw, out) {
+    if (this._inflight.has(out)) return this._inflight.get(out);
+    const tmp = out + '.part';
+    const job = new Promise((resolve) => {
+      const t = Date.now();
+      execFile(this.ffmpegPath, [
+        '-hide_banner', '-loglevel', 'error', '-y', '-i', raw,
+        '-map', '0:v', '-map', '0:a?', '-c:v', 'copy',
+        '-c:a', 'aac', '-b:a', '48k', '-af', 'aresample=async=1:first_pts=0',
+        '-movflags', '+faststart', '-f', 'mp4', tmp,
+      ], { timeout: 60000 }, (err) => {
+        if (!err && fs.existsSync(tmp) && fs.statSync(tmp).size > 0) {
+          fs.renameSync(tmp, out);
+          try { fs.unlinkSync(raw); } catch (_) {}
+          this.emit('log', `sanitized ${path.basename(out)} in ${((Date.now() - t) / 1000).toFixed(1)}s`);
+          return resolve(out);
+        }
+        // ffmpeg missing or failed: serve the original rather than nothing.
+        try { fs.unlinkSync(tmp); } catch (_) {}
+        this.emit('log', `sanitize failed for ${path.basename(raw)}: ${err ? err.message : 'empty output'}`);
+        resolve(raw);
+      });
+    }).finally(() => this._inflight.delete(out));
+    this._inflight.set(out, job);
+    return job;
   }
 
   _download(remote, out, chunk) {
     if (this._inflight.has(out)) return this._inflight.get(out);
     const job = this._withSession(async (rpc) => {
       const t = Date.now();
-      const buf = await rpc.getFile(remote, { chunk });
+      const n0 = rpc.nudges || 0;
+      let buf;
+      try {
+        buf = await rpc.getFile(remote, { chunk });
+      } catch (e) {
+        this.emit('log', `download failed ${path.basename(remote)}: ${e.message || e}`);
+        throw e;
+      }
       const tmp = out + '.part';
       fs.writeFileSync(tmp, buf);
       fs.renameSync(tmp, out);
-      this.emit('log', `downloaded ${path.basename(remote)} ${buf.length}B in ${((Date.now() - t) / 1000).toFixed(1)}s`);
+      const nudged = (rpc.nudges || 0) - n0;
+      this.emit('log', `downloaded ${path.basename(remote)} ${buf.length}B in ${((Date.now() - t) / 1000).toFixed(1)}s` +
+        (nudged ? ` (${nudged} nudges)` : ''));
       return out;
     }).finally(() => this._inflight.delete(out));
     this._inflight.set(out, job);

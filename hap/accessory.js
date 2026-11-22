@@ -150,6 +150,7 @@ const records = new RecordService({
   cacheDir: path.join(path.dirname(cfg.storage.persistPath), 'records'),
   isLiveActive: () => source.hasLiveUsers(),
   beforeConnect: () => source.yieldIfUnused(),
+  ffmpegPath: cfg.ffmpeg.path,
 });
 records.on('log', m => console.log('[records]', m));
 webUiState.records = records;
