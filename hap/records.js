@@ -91,7 +91,7 @@ class RecordService extends EventEmitter {
         await this.rpc.connect();
       }
       if (!this._hasControl) {
-        const r = await this.rpc.request('requestGetrecordcontrol', {});
+        const r = await this.rpc.request('requestGetrecordcontrol', {}, { timeoutMs: 20000, nudgeMs: 1500 });
         if (!r.body || !r.body.result) throw new Error('録画の操作権を取得できませんでした (' + (r.body && r.body.error) + ')');
         this._hasControl = true;
       }
@@ -121,7 +121,7 @@ class RecordService extends EventEmitter {
     if (!rpc) return;
     this.rpc = null;
     if (this._hasControl && rpc.state === 'ready') {
-      try { await rpc.request('requestReleaserecordcontrol', {}, { timeoutMs: 3000 }); } catch (_) {}
+      try { await rpc.request('requestReleaserecordcontrol', {}, { timeoutMs: 5000, nudgeMs: 1500 }); } catch (_) {}
     }
     this._hasControl = false;
     rpc.close();
@@ -139,7 +139,7 @@ class RecordService extends EventEmitter {
 
   async list(offset = 0, limit = 20) {
     const body = await this._withSession(async (rpc) => {
-      const r = await rpc.request('requestGetrecordlist', { offset, limit });
+      const r = await rpc.request('requestGetrecordlist', { offset, limit }, { timeoutMs: 20000, nudgeMs: 1500 });
       if (!r.body || !r.body.result) throw new Error('録画一覧を取得できませんでした');
       return r.body;
     });
@@ -241,6 +241,10 @@ class RecordService extends EventEmitter {
         buf = await rpc.getFile(remote, { chunk });
       } catch (e) {
         this.emit('log', `download failed ${path.basename(remote)}: ${e.message || e}`);
+        // A timed-out GetFile can leave the base mid-transfer: it may keep
+        // streaming stale chunks that would be mis-matched to the next
+        // request. Drop the session so the next operation reconnects clean.
+        try { rpc.close(); } catch (_) {}
         throw e;
       }
       const tmp = out + '.part';

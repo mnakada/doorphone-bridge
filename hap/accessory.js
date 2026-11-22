@@ -13,6 +13,7 @@ const { load: loadConfig, ensureDir } = require('./config');
 const { startWebUi, notifyStateChanged } = require('./pair-web');
 const { CredsRefresher } = require('./creds-refresher');
 const { RecordService } = require('./records');
+const { NasSync } = require('./nas-sync');
 
 const { cfg, configPath } = loadConfig();
 console.log('[config] loaded from', configPath);
@@ -21,7 +22,7 @@ ensureDir(cfg.storage.persistPath);
 ensureDir(path.dirname(cfg.storage.sdpPath));
 
 // Reference held so the Web UI can call accessory.setupURI() once published.
-const webUiState = { accessory: null, records: null };
+const webUiState = { accessory: null, records: null, nas: null };
 
 // Set by bootAccessory() once the creds refresher exists; the Web UI calls it
 // so a base-side unpair is detected as soon as someone opens the page.
@@ -53,6 +54,7 @@ if (cfg.web.enabled) {
     cfg,
     get accessory() { return webUiState.accessory; },
     records: () => webUiState.records,
+    nas: () => webUiState.nas,
     host: cfg.web.host,
     port: cfg.web.port,
     logger: (...a) => console.log('[web]', ...a),
@@ -155,6 +157,17 @@ const records = new RecordService({
 records.on('log', m => console.log('[records]', m));
 webUiState.records = records;
 shutdownHooks.push(() => records.suspend());
+
+// --- NAS sync (copy base recordings to a CIFS share) ---
+const nas = new NasSync({
+  records,
+  configPath: cfg.storage.nasConfigPath,
+  stateDir: path.join(path.dirname(cfg.storage.persistPath), 'records'),
+  logger: m => console.log('[nas]', m),
+});
+webUiState.nas = nas;
+nas.start();
+shutdownHooks.push(() => nas.stop());
 
 // No connection at boot: holding a session makes the base show "スマホで使用中"
 // and locks its own monitor. StreamingDelegate acquires the source while a

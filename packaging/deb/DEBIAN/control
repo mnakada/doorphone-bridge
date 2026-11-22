@@ -1,9 +1,9 @@
 Package: doorphone-hap
-Version: 0.6.1
+Version: 0.7.0
 Section: net
 Priority: optional
 Architecture: arm64
-Depends: nodejs (>= 18), ffmpeg, adduser
+Depends: nodejs (>= 18), ffmpeg, adduser, smbclient
 Maintainer: Mitsuru Nakada <mitsuru_nakada@mac.com>
 Description: HomeKit bridge for Panasonic VL-X70AH doorphone
  Exposes the Panasonic VL-X70AH (home intercom) as a HomeKit

@@ -44,7 +44,7 @@ APP_DST      := $(STAGE)/opt/doorphone-hap
 PROTO_DST    := $(STAGE)/opt/proto
 
 HAP_SRCS     := accessory.js base-rpc.js config.js creds-refresher.js doorphone-source.js \
-                h264-depay.js pair.js pair-web.js pickport.js records.js srtp.js \
+                h264-depay.js nas-sync.js pair.js pair-web.js pickport.js records.js srtp.js \
                 streaming.js package.json package-lock.json
 
 .PHONY: all deb image stage clean

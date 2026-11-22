@@ -29,6 +29,9 @@ const DEFAULTS = {
   storage: {
     persistPath: '/var/lib/doorphone-hap/persist',
     sdpPath: '/run/doorphone-hap/doorphone.sdp',
+    // NAS sync settings (server/password) live in their own file so the Web UI
+    // can edit them and secrets stay out of config.json.
+    nasConfigPath: '/etc/doorphone-hap/nas.json',
   },
   web: {
     enabled: true,
@@ -74,6 +77,7 @@ function load() {
   if (process.env.FFMPEG) cfg.ffmpeg.path = process.env.FFMPEG;
   if (process.env.PERSIST_PATH) cfg.storage.persistPath = process.env.PERSIST_PATH;
   if (process.env.SDP_PATH) cfg.storage.sdpPath = process.env.SDP_PATH;
+  if (process.env.NAS_CONFIG_PATH) cfg.storage.nasConfigPath = process.env.NAS_CONFIG_PATH;
   if (process.env.WEB_HOST) cfg.web.host = process.env.WEB_HOST;
   if (process.env.WEB_PORT) cfg.web.port = parseInt(process.env.WEB_PORT, 10);
   if (process.env.WEB_DISABLED === '1') cfg.web.enabled = false;

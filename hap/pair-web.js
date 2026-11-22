@@ -94,6 +94,7 @@ const STATIC_MAP = {
   '/app.js': { file: 'app.js', type: 'application/javascript; charset=utf-8' },
   '/App.vue': { file: 'App.vue', type: 'text/plain; charset=utf-8' },
   '/Records.vue': { file: 'Records.vue', type: 'text/plain; charset=utf-8' },
+  '/Nas.vue': { file: 'Nas.vue', type: 'text/plain; charset=utf-8' },
 };
 
 // Serve a file honouring HTTP Range (Safari/iOS refuses to play <video>
@@ -120,6 +121,21 @@ function sendFileRange(req, res, filePath, type, extraHeaders = {}) {
     res.writeHead(200, { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Content-Length': size, ...extraHeaders });
     fs.createReadStream(filePath).on('error', () => res.destroy()).pipe(res);
   });
+}
+
+function readJsonBody(req, cb) {
+  let data = '';
+  let tooBig = false;
+  req.on('data', (c) => {
+    data += c;
+    if (data.length > 1_000_000) { tooBig = true; req.destroy(); }
+  });
+  req.on('end', () => {
+    if (tooBig) return cb(new Error('body too large'));
+    try { cb(null, data ? JSON.parse(data) : {}); }
+    catch (e) { cb(e); }
+  });
+  req.on('error', (e) => cb(e));
 }
 
 function sendJson(res, code, obj) {
@@ -268,6 +284,13 @@ function startWebUi(opts) {
           } catch (e) { return recordsError(res, e); }
         }
 
+        // ---- NAS sync settings/status ----
+        const nas = typeof opts.nas === 'function' ? opts.nas() : opts.nas;
+        if (url.pathname === '/api/nas') {
+          if (!nas) return sendJson(res, 503, { error: 'ペアリング後に利用できます' });
+          return sendJson(res, 200, { config: nas.publicConfig(), status: nas.lastResult, running: nas.running });
+        }
+
         if (url.pathname === '/api/state') {
           try { opts.onStateQuery?.(); } catch (_) {}
           const s = await getState({ cfg, accessory: getAccessory() });
@@ -300,6 +323,20 @@ function startWebUi(opts) {
       }
       if (req.method === 'POST' && url.pathname === '/api/pair') {
         return handlePair({ req, res, cfg, logger, onPaired: opts.onPaired });
+      }
+
+      if (req.method === 'POST' && (url.pathname === '/api/nas' || url.pathname === '/api/nas/sync')) {
+        const nas = typeof opts.nas === 'function' ? opts.nas() : opts.nas;
+        if (!nas) return sendJson(res, 503, { error: 'ペアリング後に利用できます' });
+        if (url.pathname === '/api/nas/sync') {
+          nas.syncNow('manual').then(r => sendJson(res, 200, { status: r })).catch(e => sendJson(res, 500, { error: e.message || String(e) }));
+          return;
+        }
+        return readJsonBody(req, (err, body) => {
+          if (err) return sendJson(res, 400, { error: 'invalid JSON' });
+          try { return sendJson(res, 200, { config: nas.saveConfig(body || {}) }); }
+          catch (e) { return sendJson(res, 500, { error: e.message || String(e) }); }
+        });
       }
 
       res.writeHead(404); res.end('not found');

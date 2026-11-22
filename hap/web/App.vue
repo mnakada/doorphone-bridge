@@ -11,11 +11,21 @@
       :title="state.paired ? '' : '親機とのペアリング後に利用できます'"
       @click="tab = 'records'"
     >録画</button>
+    <button
+      :class="{ active: activeTab === 'nas' }"
+      :disabled="!state.paired"
+      :title="state.paired ? '' : '親機とのペアリング後に利用できます'"
+      @click="tab = 'nas'"
+    >NAS</button>
     <button :class="{ active: activeTab === 'status' }" @click="tab = 'status'">状態</button>
   </nav>
 
   <main v-if="activeTab === 'records'">
     <Records />
+  </main>
+
+  <main v-else-if="activeTab === 'nas'">
+    <Nas />
   </main>
 
   <main v-else>
@@ -96,6 +106,7 @@
 <script setup>
 import { reactive, ref, computed, onMounted, onUnmounted } from 'vue';
 import Records from './Records.vue';
+import Nas from './Nas.vue';
 
 // Selected tab; records is only usable once paired with the base, so the
 // effective tab falls back to status until then.
