@@ -7,8 +7,9 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
 - Debian arm64 向け `.deb` パッケージを提供（Raspberry Pi 4/5 の 64bit OS で動作確認済み）。
 - 初回ペアリング（QR）とその後のライブ視聴まで、Node で完結（Android アプリは不要）。
 - HomeKit への追加は Web UI の QR、またはセットアップコード。
+- Web UI で親機 SD の **録画一覧・再生**、および NAS への **自動バックアップ**。
 
-## 現在の状態（2026-11-17）
+## 現在の状態（2026-11-22）
 
 - ✅ ドアホン親機との KVS WebRTC セッション確立 / H264 映像受信 / HomeKit SRTP への再パッケージ
 - ✅ `-c:v copy` パススルーで iPhone / Apple TV 側の H264 デコードが安定
@@ -17,6 +18,11 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
   RTP timestamp を HomeKit 仕様に書き換えた上で自前 SRTP で送信
 - ✅ MQTT mTLS 経由の AWS 一時クレデンシャル自動更新（10分ごと）
 - ✅ Web UI (`:8080`) でペアリング状態 / HomeKit setup QR / Setup code を表示
+- ✅ **録画一覧・再生** — 親機 SD の録画を Web UI の「録画」タブで一覧・サムネイル・再生
+  （`Request_GetRecordList` / `Request_GetFile` で MP4 を直接取得）。ブラウザ再生前に
+  音声のみ再エンコードして正規化（親機 AAC の規格違反フレームで Chrome がデコード中断する問題を回避）
+- ✅ **NAS バックアップ** — 録画を定期的に CIFS/SMB 共有へコピー（「NAS」タブで設定）。
+  strftime の保存PATH・保存日数による自動削除・初回遡り日数に対応（atomcam_tools 相当）
 - ✅ systemd ユニット、`.deb` パッケージ、`doorphone-hap pair` CLI
 - 🔎 Web UI からの QR ペアリングは実装済み・**実機未検証**（新規端末追加時のみ必要）
 - ❌ 双方向音声・ドアベル通知はscope 外
@@ -91,9 +97,16 @@ doorphone/
 │   ├── srtp.js             # 自前 AES_CM_128_HMAC_SHA1_80 (Opus TS 書換え用)
 │   ├── creds-refresher.js  # MQTT mTLS で temp creds 更新
 │   ├── pair.js             # QR → /reg → CSR → KVS → cert 保存
-│   ├── pair-web.js         # Web UI (ペアリング + HomeKit QR)
+│   ├── pair-web.js         # Web UI (ペアリング + HomeKit QR + 録画/NAS API)
+│   ├── base-rpc.js         # 親機との DataChannel RPC (request_id + GetFile + nudge 再送)
+│   ├── records.js          # 親機 SD の録画一覧・サムネイル・MP4 取得 + ブラウザ用音声正規化
+│   ├── nas-sync.js         # 録画を CIFS/SMB へ定期バックアップ (smbclient)
 │   ├── h264-depay.js       # RFC 6184 H264 depacketizer
 │   ├── config.js           # 設定ローダ
+│   ├── web/                # Web UI (Vue 3 SFC, ランタイム読込)
+│   │   ├── App.vue         # タブ: 録画 / NAS / 状態
+│   │   ├── Records.vue     # 録画一覧・再生
+│   │   └── Nas.vue         # NAS バックアップ設定
 │   └── bin/doorphone-hap   # CLI (pair / serve / status)
 ├── packaging/              # .deb ビルド (Linux arm64 container 内で npm install)
 │   ├── deb/                # Debian パッケージツリー
@@ -101,10 +114,12 @@ doorphone/
 │   ├── do-build.sh         # ホスト側呼び出し
 │   └── scripts-mount/do-build.sh  # コンテナ内で dpkg-deb --build
 ├── Makefile                # ビルド entry point (container 自動検出)
-├── proto/                  # ドアホン親機 ↔ 我々の Protobuf (jadx 復元)
-│   ├── webrtc_if.proto
-│   ├── call.proto
-│   └── pairing.proto
+├── proto/                  # ドアホン親機 ↔ 我々の Protobuf
+│   ├── webrtc_if.proto     # 手書き (初期)
+│   └── gen/                # jadx の埋め込み descriptor から再生成した正本
+│       ├── webrtc_if.proto #   (research/extract_proto.js)。record/profile 等を網羅
+│       ├── record.proto
+│       └── …
 ├── doorphone-hap_*.deb     # (gitignore) ビルドされた .deb
 ├── research/               # リバースエンジニアリング時の検証コード
 │   ├── pair.py             # Python 版 QR/reg
@@ -118,7 +133,7 @@ doorphone/
 
 ### 前提
 
-- RPi 側: `nodejs (>= 18)` / `ffmpeg` （`apt` で自動的に満たされる）
+- RPi 側: `nodejs (>= 18)` / `ffmpeg` / `smbclient`（NAS バックアップ用。`apt` で自動的に満たされる）
 - ビルドマシンはいずれか:
   - **macOS (Apple Silicon)**: Apple `container` CLI
     （`brew install --cask container` + 初回のみ `container system start`）
@@ -210,8 +225,9 @@ sudo doorphone-hap version
   },
   "ffmpeg":  { "path": "/usr/bin/ffmpeg" },
   "storage": {
-    "persistPath": "/var/lib/doorphone-hap/persist",
-    "sdpPath":     "/run/doorphone-hap/doorphone.sdp"
+    "persistPath":   "/var/lib/doorphone-hap/persist",
+    "sdpPath":       "/run/doorphone-hap/doorphone.sdp",
+    "nasConfigPath": "/etc/doorphone-hap/nas.json"  // NAS バックアップ設定の保存先
   },
   "web": { "enabled": true, "host": "0.0.0.0", "port": 8080 }
 }
@@ -219,6 +235,27 @@ sudo doorphone-hap version
 
 主な環境変数オーバーライド（`ACC_NAME`, `ACC_MAC`, `ACC_PIN`, `CREDS_PATH`, `WEB_PORT`, …）は
 `hap/config.js` 参照。
+
+## 録画一覧・再生
+
+Web UI の「録画」タブで、親機 SD に保存された録画を一覧・再生できる。閲覧中は親機に
+「スマホで使用中」と一時的に表示されることがある（録画操作のため親機へオンデマンド接続する）。
+取得した MP4 はブラウザ再生前に音声のみ再エンコードして正規化し、RPi 側にキャッシュする。
+
+## NAS バックアップ
+
+Web UI の「NAS」タブで、録画を CIFS/SMB 共有へ定期的にコピーできる（atomcam_tools の
+NAS録画設定と同等）。
+
+- **ネットワークPATH**: `//server/共有/フォルダ` 形式。アカウント・パスワード・SMB バージョン。
+- **保存するPATH**: strftime 書式（既定 `%Y%m%d/%H%M%S`、拡張子は自動付加）。
+- **確認の間隔**（既定 60 分）ごとに未コピーの録画を差分アップロード。**初回の遡り日数**
+  （既定 7 日）で過去分の一括コピー範囲を制限。
+- **ファイルの自動削除** + **保存日数**で、NAS 上の「自分がコピーしたファイル」を期限超過時に削除。
+- 設定・パスワードは `config.json` とは別の `/etc/doorphone-hap/nas.json`（0600）に保存され、
+  再起動なしで反映される。パスワードは `smbclient` へ一時認証ファイル経由で渡し `ps` に出さない。
+- ライブ視聴中は同期を一時停止し、次回に再試行する。親機が読めない録画（長い手動録画の一部）は
+  スキップ → バックオフ（6h→24h）後に再試行 → 3 回失敗で恒久スキップし、全体を止めない。
 
 ## プロトコル要点（再発見防止メモ）
 
@@ -259,6 +296,14 @@ sudo doorphone-hap version
     Node 側で `process.hrtime.bigint()` を基準にドリフト補正しつつ 20 ms 刻みで ffmpeg
     stdin に 160 B の mulaw を書き込むと、ドアホン親機 VAD gap も mulaw silence (0xFF) で埋めた
     まま rock-solid な 8000 B/s を維持できる。
+12. **DataChannel の応答詰まり → 同一要求の再送 (nudge)** — `Request_GetFile` / `GetRecordList`
+    / `GetRecordControl` は、親機側 SCTP が応答を用意していてもこちらが次に何か送るまで
+    流してこないことがある。同じ request_id で定期再送 (nudge) すると詰まりが解ける
+    (`hap/base-rpc.js`)。重複応答は pending が無いので無視される。GetFile がタイムアウトしたら
+    中途チャンクで後続要求が壊れるのでセッションを張り直す。
+13. **録画 MP4 の音声は規格違反フレームを含む** — 親機 AAC に TNS filter order が AAC-LC 上限
+    (12) を超えるフレームが混じり、Chrome は `PIPELINE_ERROR_DECODE` で再生を途中停止する。
+    映像はコピーのまま音声のみ再エンコードして正規化する (`hap/records.js`)。
 
 ## 既知の制約
 
@@ -267,6 +312,8 @@ sudo doorphone-hap version
 - RPi 1 台で 1 つのドアホン親機のみ。複数親機対応は未実装（config の分割から必要）。
 - Snapshot は最後に live が開いていた時点の映像を 5 秒キャッシュして返す。never-live
   起動直後は 1x1 グレーのプレースホルダ。
+- 一部の長い手動録画は親機が SD 上の特定ブロックを返せず `Request_GetFile` がタイムアウトする。
+  録画再生・NAS バックアップではこれらをスキップする（純正アプリでも再生困難な録画）。
 
 ## 参考（リバースエンジニアリング時の検証コード）
 
@@ -276,6 +323,7 @@ sudo doorphone-hap version
 - `research/get_kvs_creds.py` — MQTT 経由で手動 creds 取得（`hap/creds-refresher.js` の元ネタ）
 - `research/pair.py` — QR → /reg HMAC までの最小実装（完全なペアリングは `hap/pair.js`）
 - `research/node-viewer/viewer3.js` — スタンドアロンな KVS WebRTC viewer（HomeKit 不要、CLI のみ）
+- `research/extract_proto.js` — jadx の埋め込み descriptor から `proto/gen/*.proto` を再生成
 
 ## ライセンス
 
