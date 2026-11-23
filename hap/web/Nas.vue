@@ -82,7 +82,12 @@
 
     <div v-if="running || note || hasResult" class="status">
       <h3>直近の同期</h3>
-      <p v-if="running" class="small muted">同期を実行中です…（親機から順にダウンロードします）</p>
+      <p v-if="running" class="small muted">
+        同期を実行中です…（親機から順にダウンロードします）
+        <template v-if="progress && progress.total">
+          {{ progress.copied + progress.failed }} / {{ progress.total }} 件<template v-if="progress.failed">（スキップ {{ progress.failed }} 件）</template>
+        </template>
+      </p>
       <p v-else-if="note" class="small muted">{{ note }}</p>
       <p v-else-if="hasResult" class="small">
         {{ fmt(status.at) }}：
@@ -100,6 +105,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 const cfg = ref(null);
 const status = ref(null);
 const running = ref(false);
+const progress = ref(null);
 const note = ref('');
 const error = ref('');
 const saving = ref(false);
@@ -130,29 +136,52 @@ async function load() {
     const b = await r.json();
     if (!r.ok) { error.value = b.error || `HTTP ${r.status}`; return; }
     cfg.value = { password: '', ...b.config };
-    status.value = b.status;
-    running.value = !!b.running;
-    if (running.value) startPoll();
+    applyStatus(b);
   } catch (e) {
     error.value = '設定を取得できませんでした: ' + (e.message || e);
   }
 }
 
-// While a sync runs (e.g. a big first backup), poll until it finishes so the
-// final result appears without a manual reload.
-function startPoll() {
-  if (pollTimer) return;
-  pollTimer = setInterval(async () => {
+// Update only the status part of an /api/nas response. The form (cfg) is
+// left alone so polling never clobbers what the user is editing.
+function applyStatus(b) {
+  const prevAt = status.value && status.value.at;
+  running.value = !!b.running;
+  progress.value = b.progress || null;
+  if (b.status) status.value = b.status;
+  // A new run started or finished since the last "skipped" notice: the
+  // notice is stale, show the live state instead.
+  if (running.value || (b.status && b.status.at !== prevAt)) note.value = '';
+}
+
+// Keep "直近の同期" current without a reload: scheduled (interval) runs start
+// and finish on the server on their own. Poll fast while a run is in flight,
+// slowly otherwise, and not at all while the tab is hidden.
+const POLL_RUNNING_MS = 3000;
+const POLL_IDLE_MS = 20000;
+let stopped = false;
+
+async function poll() {
+  pollTimer = null;
+  if (stopped) return;
+  if (!document.hidden) {
     try {
       const r = await fetch('/api/nas');
-      const b = await r.json();
-      if (!r.ok) return;
-      running.value = !!b.running;
-      if (b.status) status.value = b.status;
-      if (!running.value) { clearInterval(pollTimer); pollTimer = null; }
+      if (r.ok) applyStatus(await r.json());
     } catch (_) {}
-  }, 5000);
+  }
+  schedulePoll();
 }
+
+function schedulePoll(ms) {
+  if (stopped) return;
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = setTimeout(poll, ms ?? (running.value || syncing.value ? POLL_RUNNING_MS : POLL_IDLE_MS));
+}
+
+function startPoll() { schedulePoll(POLL_RUNNING_MS); }
+
+function onVisible() { if (!document.hidden) schedulePoll(0); }
 
 async function save() {
   saving.value = true;
@@ -180,6 +209,8 @@ async function syncNow() {
   syncing.value = true;
   error.value = '';
   note.value = '';
+  // The POST only answers when the run ends; poll meanwhile to show progress.
+  startPoll();
   try {
     const r = await fetch('/api/nas/sync', { method: 'POST' });
     const b = await r.json();
@@ -199,8 +230,16 @@ async function syncNow() {
   }
 }
 
-onMounted(load);
-onUnmounted(() => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } });
+onMounted(async () => {
+  await load();
+  schedulePoll();
+  document.addEventListener('visibilitychange', onVisible);
+});
+onUnmounted(() => {
+  stopped = true;
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  document.removeEventListener('visibilitychange', onVisible);
+});
 </script>
 
 <style scoped>

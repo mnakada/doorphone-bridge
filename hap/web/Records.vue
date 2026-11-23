@@ -61,7 +61,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 
 const PAGE = 20;
 const records = ref([]);
@@ -128,6 +128,55 @@ async function load(offset) {
   }
 }
 const reload = () => load(0);
+
+// ---- auto refresh -------------------------------------------------------
+// The server re-reads the base's list on the hourly NAS check and remembers
+// the newest recording (/api/records/head, which never touches the base).
+// When that differs from the top of what we show, fetch the first page and
+// prepend only the new entries, so pages loaded with 「さらに読み込む」 and
+// the open player are kept as they are.
+const HEAD_POLL_MS = 30000;
+let headTimer = null;
+let stopped = false;
+
+async function checkHead() {
+  headTimer = null;
+  if (stopped) return;
+  try {
+    if (!document.hidden && !loading.value && !error.value) {
+      const r = await fetch('/api/records/head');
+      const b = r.ok ? await r.json() : null;
+      const head = b && b.head;
+      const top = records.value[0];
+      if (head && head.id && (!top || head.id !== top.id)) await mergeNew();
+    }
+  } catch (_) {}
+  scheduleHead();
+}
+
+async function mergeNew() {
+  const body = await fetchPage(0);
+  const seen = new Set(records.value.map(r => r.id));
+  const fresh = body.records.filter(r => !seen.has(r.id));
+  const merged = fresh.concat(records.value);
+  // Fall back to just the first page when merging would leave a gap (a whole
+  // page of new recordings) or the tops still disagree (our top recording was
+  // deleted on the base) — otherwise the head check would refetch forever.
+  if (fresh.length === body.records.length || (merged[0] && body.records[0] && merged[0].id !== body.records[0].id)) {
+    records.value = body.records;
+    hasNext.value = body.hasNext;
+  } else if (fresh.length) {
+    records.value = merged;
+  }
+}
+
+function scheduleHead(ms = HEAD_POLL_MS) {
+  if (stopped) return;
+  if (headTimer) clearTimeout(headTimer);
+  headTimer = setTimeout(checkHead, ms);
+}
+
+function onVisible() { if (!document.hidden) scheduleHead(0); }
 const loadMore = () => load(records.value.length);
 
 function onThumbError(e) {
@@ -175,7 +224,16 @@ function close() {
   videoSrc.value = '';
 }
 
-onMounted(reload);
+onMounted(async () => {
+  await reload();
+  scheduleHead();
+  document.addEventListener('visibilitychange', onVisible);
+});
+onUnmounted(() => {
+  stopped = true;
+  if (headTimer) { clearTimeout(headTimer); headTimer = null; }
+  document.removeEventListener('visibilitychange', onVisible);
+});
 </script>
 
 <style scoped>

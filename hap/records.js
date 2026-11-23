@@ -69,6 +69,10 @@ class RecordService extends EventEmitter {
     this._idleTimer = null;
     this._known = new Map(); // path -> record (from list responses)
     this._inflight = new Map(); // cache file -> Promise (dedupe concurrent downloads)
+    // Newest recording seen by any first-page list (Web UI or the hourly NAS
+    // check). The Web UI polls this cheaply — without touching the base — to
+    // learn that new recordings exist.
+    this.head = null; // { id, time, checkedAt }
     fs.mkdirSync(path.join(cacheDir, 'thumbs'), { recursive: true });
     fs.mkdirSync(path.join(cacheDir, 'videos'), { recursive: true });
   }
@@ -160,6 +164,9 @@ class RecordService extends EventEmitter {
         videoCached: fs.existsSync(path.join(this.cacheDir, 'videos', webName(rec.recordFile))),
       };
     });
+    if (offset === 0) {
+      this.head = { id: records[0] ? records[0].id : null, time: records[0] ? records[0].time : null, checkedAt: new Date().toISOString() };
+    }
     return { offset, limit, hasNext: !!body.hasNext, records };
   }
 

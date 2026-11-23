@@ -264,6 +264,11 @@ function startWebUi(opts) {
         }
         // ---- recordings (親機の録画一覧) ----
         const records = typeof opts.records === 'function' ? opts.records() : opts.records;
+        if (url.pathname === '/api/records/head') {
+          // Cached newest-recording marker; never contacts the base.
+          if (!records) return sendJson(res, 503, { error: 'ペアリング後に利用できます' });
+          return sendJson(res, 200, { head: records.head || null });
+        }
         if (url.pathname === '/api/records') {
           if (!records) return sendJson(res, 503, { error: 'ペアリング後に利用できます' });
           const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
@@ -288,7 +293,7 @@ function startWebUi(opts) {
         const nas = typeof opts.nas === 'function' ? opts.nas() : opts.nas;
         if (url.pathname === '/api/nas') {
           if (!nas) return sendJson(res, 503, { error: 'ペアリング後に利用できます' });
-          return sendJson(res, 200, { config: nas.publicConfig(), status: nas.lastResult, running: nas.running });
+          return sendJson(res, 200, { config: nas.publicConfig(), status: nas.lastResult, running: nas.running, progress: nas.progress || null });
         }
 
         if (url.pathname === '/api/state') {

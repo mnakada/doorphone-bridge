@@ -79,6 +79,7 @@ class NasSync extends EventEmitter {
     this.logger = logger || (() => {});
     this.timer = null;
     this.running = false;
+    this.progress = null;   // { total, copied, failed } while a run is in flight
     this.lastResult = null; // { at, ok, copied, skipped, error }
     this._state = this._loadState();
     this._normalizeFailed();
@@ -173,10 +174,12 @@ class NasSync extends EventEmitter {
     if (!srv) { this.logger('NAS server path is invalid (expected //host/share/...)'); return { skipped: 'bad-server' }; }
 
     this.running = true;
+    this.progress = null;
     const t0 = Date.now();
     let copied = 0, failed = 0, error = null;
     try {
       const todo = await this._collectPending(cfg);
+      this.progress = { total: todo.length, copied: 0, failed: 0 };
       this.logger(`sync (${reason}): ${todo.length} new recording(s)`);
       this._state.failed = this._state.failed || {};
       let consecutive = 0;
@@ -197,6 +200,7 @@ class NasSync extends EventEmitter {
           delete this._state.failed[rec.id];
           this._saveState();
           copied++;
+          this.progress.copied = copied;
           consecutive = 0;
           this.logger(`uploaded ${path.basename(rec.id)} -> ${remoteBase}.mp4`);
         } catch (e) {
@@ -222,6 +226,7 @@ class NasSync extends EventEmitter {
           }
           this._saveState();
           failed++;
+          this.progress.failed = failed;
           // A GetFile timeout is localized to one (likely unreadable)
           // recording — skip it and keep going so a cluster of bad files does
           // not stall progress. A global problem (NAS down, base unreachable)
@@ -243,6 +248,7 @@ class NasSync extends EventEmitter {
       this.logger(`sync error: ${error}`);
     } finally {
       this.running = false;
+      this.progress = null;
     }
     this.lastResult = { at: new Date().toISOString(), ok: !error, copied, failed, error, ms: Date.now() - t0 };
     return this.lastResult;
