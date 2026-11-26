@@ -170,6 +170,15 @@ class RecordService extends EventEmitter {
     return { offset, limit, hasNext: !!body.hasNext, records };
   }
 
+  // Base status (Request_GetState): door / camera device lists etc.
+  async unitState() {
+    return this._withSession(async (rpc) => {
+      const r = await rpc.request('requestGetstate', {}, { timeoutMs: 20000, nudgeMs: 1500 });
+      if (!r.body || !r.body.result) throw new Error('親機の状態を取得できませんでした');
+      return r.body.state || {};
+    });
+  }
+
   _resolve(id, kind) {
     const p = fromId(id);
     const rec = this._known.get(p);

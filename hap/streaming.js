@@ -107,6 +107,15 @@ class StreamingDelegate {
     // Snapshot cache: { "WxH": { buf, at } }. Home polls every few seconds.
     this._snapshotCache = new Map();
     this._snapshotCacheTtlMs = 5000;
+    // Another camera on the same base took the session over: end our
+    // HomeKit streams instead of leaving the viewer on a frozen picture.
+    this.source.on?.('preempted', () => {
+      for (const sessionID of [...this.ongoingSessions.keys()]) {
+        console.log('[HK] stream ended — base switched to another camera, session=', sessionID);
+        try { this.controller?.forceStopStreamingSession(sessionID); } catch (_) {}
+        this.stopStream(sessionID);
+      }
+    });
   }
 
   handleSnapshotRequest(request, callback) {

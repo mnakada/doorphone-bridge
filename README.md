@@ -8,6 +8,7 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
 - 初回ペアリング（QR）とその後のライブ視聴まで、Node で完結（Android アプリは不要）。
 - HomeKit への追加は Web UI の QR、またはセットアップコード。
 - Web UI で親機 SD の **録画一覧・再生**、および NAS への **自動バックアップ**。
+- 親機に登録された **増設カメラ・2台目以降の玄関子機** もそれぞれ別の HomeKit カメラとして公開（カメラ最大 4 台）。
 
 ## 現在の状態（2026-11-22）
 
@@ -23,6 +24,9 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
   音声のみ再エンコードして正規化（親機 AAC の規格違反フレームで Chrome がデコード中断する問題を回避）
 - ✅ **NAS バックアップ** — 録画を定期的に CIFS/SMB 共有へコピー（「NAS」タブで設定）。
   strftime の保存PATH・保存日数による自動削除・初回遡り日数に対応（atomcam_tools 相当）
+- ✅ **増設カメラ対応** — 親機の `Request_GetState` で玄関子機 / カメラ一覧を取得し、有効な機器ごとに
+  HomeKit カメラアクセサリを公開（一覧は `/var/lib/doorphone-hap/devices.json` にキャッシュ）。
+  親機は同一端末からのライブを 1 本しか張れないため、別のカメラを開くと前のカメラのライブは終了する
 - ✅ systemd ユニット、`.deb` パッケージ、`doorphone-hap pair` CLI
 - 🔎 Web UI からの QR ペアリングは実装済み・**実機未検証**（新規端末追加時のみ必要）
 - ❌ 双方向音声・ドアベル通知はscope 外
@@ -194,6 +198,12 @@ HMAC 鍵を置いた後、サービスは「未ペアリング」モードで起
 
 アクセサリは IP Camera カテゴリで公開される。
 
+親機に増設カメラ（最大 4 台）や 2 台目以降の玄関子機が登録されている場合は、機器ごとに別アクセサリとして
+公開され、Web UI に機器ごとの QR が表示される。名前は親機の登録名（例: `カメラ1`）、
+セットアップコードは共通。HAP の MAC / ポートは `accessory.username` / `accessory.port` に
+オフセット（玄関子機 n → +n、カメラ n → +0x10+n）を足したもの。1 台目の玄関子機は従来どおり。
+親機に機器を追加したらサービスを再起動すれば反映される（起動時に一覧を取得）。
+
 ### CLI
 
 ```bash
@@ -267,7 +277,9 @@ NAS録画設定と同等）。
 2. **auto-negotiation タイミング** — `pc.onLocalDescription` などは必ず `addTrack` /
    `createDataChannel` の**前**に登録する。
 3. **デバイス指定** — 玄関子機のカメラは `DEVICE_DOOR(1), devno=0, TYPE_MONITOR(2)`。
-   `DEVICE_CAMERA(2)` は増設網カメラ用で、本機では `REASON_CONNECTION_FAILED` が返る。
+   増設カメラは `DEVICE_CAMERA(2), devno=<camera.cameras の index>`（0 始まり）。未登録の
+   devno を指定すると `REASON_CONNECTION_FAILED` が返る。同じ clientId で 2 セッション
+   張ると互いに切断し合うので、カメラ間でセッションを排他する必要がある。
 4. **CSR Subject は単一 CN** — Panasonic アプリは
    `CN=IoT ApplicationOU=Organizational UnitO=OrganizationC=Country` という
    「OU/O/C が CN の中に埋め込まれた」単一 CN を使う。@peculiar/x509 で手で合わせる。

@@ -15,27 +15,33 @@ class H264Depay {
     // Buffer.concat them once on completion.
     this._fuParts = null;
     this._fuSize = 0;
+    this._fuDamaged = false; // a fragment went missing mid-NAL
     this._lastSeq = -1;
   }
 
-  _emitParts(parts, size) {
+  // onNal(nal, { damaged }): damaged = an FU-A fragment in the middle was
+  // lost, so the NAL is truncated inside (decodes as a smeared picture).
+  _emitParts(parts, size, damaged) {
     // parts is an array of Buffer slices; prepend the Annex-B start code.
     const out = Buffer.allocUnsafe(START_CODE.length + size);
     START_CODE.copy(out, 0);
     let off = START_CODE.length;
     for (const p of parts) { p.copy(out, off); off += p.length; }
-    this.onNal(out);
+    this.onNal(out, { damaged: !!damaged });
   }
 
   _emitSingle(nal) {
     const out = Buffer.allocUnsafe(START_CODE.length + nal.length);
     START_CODE.copy(out, 0);
     nal.copy(out, START_CODE.length);
-    this.onNal(out);
+    this.onNal(out, { damaged: false });
   }
 
   push(rtp) {
     if (rtp.length < 12) return;
+    const seq = rtp.readUInt16BE(2);
+    const contiguous = this._lastSeq < 0 || seq === ((this._lastSeq + 1) & 0xffff);
+    this._lastSeq = seq;
     const cc = rtp[0] & 0x0f;
     const x = (rtp[0] & 0x10) !== 0;
     let payloadOffset = 12 + cc * 4;
@@ -75,13 +81,15 @@ class H264Depay {
         const reconstructedNalHdr = Buffer.from([(nalHdr & 0xe0) | origType]);
         this._fuParts = [reconstructedNalHdr, fragment];
         this._fuSize = reconstructedNalHdr.length + fragment.length;
+        this._fuDamaged = false;
       } else if (this._fuParts) {
+        if (!contiguous) this._fuDamaged = true;
         this._fuParts.push(fragment);
         this._fuSize += fragment.length;
       }
       if (end && this._fuParts) {
-        this._emitParts(this._fuParts, this._fuSize);
-        this._fuParts = null; this._fuSize = 0;
+        this._emitParts(this._fuParts, this._fuSize, this._fuDamaged);
+        this._fuParts = null; this._fuSize = 0; this._fuDamaged = false;
       }
     } else {
       // Unsupported (MTAP, FU-B, STAP-B). Reset FU state.

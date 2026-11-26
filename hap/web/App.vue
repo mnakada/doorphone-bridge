@@ -62,18 +62,18 @@
       <p v-else-if="pairResult" class="fail">✗ 失敗: {{ pairResult.error }}</p>
     </section>
 
-    <section v-if="showHomeKitPanel" class="card">
-      <h2>Apple Home への追加</h2>
+    <section v-for="cam in unregisteredCams" :key="cam.key" class="card">
+      <h2>Apple Home への追加<span v-if="cameraList.length > 1">: {{ cam.name }}</span></h2>
       <p>
         以下の QR コードをスキャンするか、iOS の Home アプリで「アクセサリを追加」→「その他のオプション」→
-        <code>{{ state.accessoryName }}</code> を選んでください。
+        <code>{{ cam.name }}</code> を選んでください。
       </p>
       <div class="hk-row">
-        <div v-html="state.setupQrSvg"></div>
+        <div v-html="cam.setupQrSvg"></div>
         <div>
           <p>セットアップコード</p>
           <p class="pincode">{{ state.pincode }}</p>
-          <p class="muted" style="font-size:12px">URI: <code>{{ state.setupUri }}</code></p>
+          <p class="muted" style="font-size:12px">URI: <code>{{ cam.setupUri }}</code></p>
         </div>
       </div>
     </section>
@@ -84,9 +84,9 @@
         <span v-if="state.paired" class="ok">✓ ドアホン親機: ペアリング済み</span>
         <span v-else class="fail">✗ ドアホン親機: 未ペアリング</span>
       </p>
-      <p>
-        <span v-if="state.hkConnected" class="ok">✓ Apple Home: 登録済み</span>
-        <span v-else class="muted">— Apple Home: 未登録</span>
+      <p v-for="cam in cameraList" :key="cam.key">
+        <span v-if="cam.hkConnected" class="ok">✓ Apple Home<template v-if="cameraList.length > 1"> ({{ cam.name }})</template>: 登録済み</span>
+        <span v-else class="muted">— Apple Home<template v-if="cameraList.length > 1"> ({{ cam.name }})</template>: 未登録</span>
       </p>
       <p class="muted file-chips">
         <template v-for="(ok, name) in state.files" :key="name">
@@ -121,6 +121,7 @@ const state = reactive({
   pincode: '',
   setupUri: '',
   setupQrSvg: '',
+  accessories: [],
   files: {},
   unit: null,
 });
@@ -138,7 +139,12 @@ const profileName = ref('Doorphone Bridge');
 
 const activeTab = computed(() => (state.paired ? tab.value : 'status'));
 const showPairForm = computed(() => !state.paired);
-const showHomeKitPanel = computed(() => state.paired && !state.hkConnected);
+// One HomeKit camera per door station / extra camera on the base. Older
+// servers only report the single accessory, so fall back to that.
+const cameraList = computed(() => (state.accessories && state.accessories.length)
+  ? state.accessories
+  : [{ key: 'door0', name: state.accessoryName, hkConnected: state.hkConnected, setupUri: state.setupUri, setupQrSvg: state.setupQrSvg }]);
+const unregisteredCams = computed(() => (state.paired ? cameraList.value.filter(c => !c.hkConnected && c.setupUri) : []));
 
 async function refresh() {
   try {

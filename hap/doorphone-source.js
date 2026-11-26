@@ -26,15 +26,29 @@ const { H264Depay } = require('./h264-depay');
 
 const REGION = 'ap-northeast-1';
 
-// Request_Connect(DEVICE_DOOR, devno=0, TYPE_MONITOR) with request_id=1 version=VERSION_1
-const REQUEST_CONNECT = Buffer.from('08011001a2060408012002', 'hex');
+// Request_Connect(device, devno, TYPE_MONITOR) with request_id=1 version=VERSION_1.
+// device: 1 = DEVICE_DOOR (玄関子機), 2 = DEVICE_CAMERA (増設カメラ). devno is
+// the 0-based index into GetState's door.doors / camera.cameras.
+// Hand-encoded: the door-0 form is 08011001a2060408012002 (devno=0 omitted).
+const DEVICE_DOOR = 1;
+const DEVICE_CAMERA = 2;
+function buildRequestConnect(device, devno) {
+  const inner = [0x08, device];
+  if (devno) inner.push(0x10, devno);
+  inner.push(0x20, 0x02); // type = TYPE_MONITOR
+  return Buffer.from([0x08, 0x01, 0x10, 0x01, 0xa2, 0x06, inner.length, ...inner]);
+}
 // Request_Disconnect with request_id=2 version=VERSION_1. Sent before closing
 // so the base drops its "スマホで使用中" (in use by phone) state immediately.
 const REQUEST_DISCONNECT = Buffer.from('08021001c20600', 'hex');
 
 class DoorphoneSource extends EventEmitter {
-  constructor({ credsPath, videoHost = '127.0.0.1', videoPort = 5004, audioPort = 5006, viewerId, beforeStart }) {
+  constructor({ credsPath, videoHost = '127.0.0.1', videoPort = 5004, audioPort = 5006, viewerId, beforeStart,
+                device = DEVICE_DOOR, devno = 0 }) {
     super();
+    this.device = device;
+    this.devno = devno;
+    this.requestConnect = buildRequestConnect(device, devno);
     this.credsPath = credsPath;
     this.videoHost = videoHost;
     this.videoPort = videoPort;
@@ -53,11 +67,17 @@ class DoorphoneSource extends EventEmitter {
     this._lastKeyframeAt = 0;
     this._pendingKeyframeNals = null; // scratch buffer while assembling
     this._depay = new H264Depay({
-      onNal: (nal) => {
+      onNal: (nal, info) => {
         this._rememberParameterSets(nal);
         const nalType = nal[4] & 0x1f;
         // Cache a decodable keyframe (SPS+PPS+IDR) for on-demand snapshots.
-        if (nalType === 5 && this._sps && this._pps) {
+        // An IDR with lost fragments decodes as a smeared picture, and the
+        // snapshot would keep showing it until the next live view — keep
+        // the previous good one instead.
+        if (nalType === 5 && info?.damaged) {
+          this.damagedKeyframes = (this.damagedKeyframes || 0) + 1;
+          this.emit('log', 'IDR with lost packets — not used for snapshots');
+        } else if (nalType === 5 && this._sps && this._pps) {
           this._lastKeyframe = Buffer.concat([this._sps, this._pps, nal]);
           this._lastKeyframeAt = Date.now();
         }
@@ -107,6 +127,7 @@ class DoorphoneSource extends EventEmitter {
     this._idleTimer = null;
     this._reconnectTimer = null;
     this._stopping = false;
+    this._gen = 0;
   }
 
   // Take a reference on the live session; connects if not already.
@@ -174,6 +195,25 @@ class DoorphoneSource extends EventEmitter {
     this._idleTimer.unref?.();
   }
 
+  // Another camera on the same base is about to connect. The base keeps one
+  // session per viewer id (a second one makes both drop in turns), so hand
+  // the base over right away: drop all users (listeners on 'preempted' stop
+  // their HomeKit streams), say goodbye, close. Resolves once the base has
+  // had a moment to tear the old session down.
+  async preempt() {
+    if (this.state === 'idle' && !this._preparing && !this._users.size) return;
+    this.emit('log', 'handing the base over to another camera');
+    this.emit('preempted');
+    this._users.clear();
+    if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+    if (this.state === 'idle') return; // was still preparing; it won't start now
+    try { this.selfDc?.sendMessageBinary(REQUEST_DISCONNECT); } catch (_) {}
+    await new Promise(r => setTimeout(r, 300));
+    this.stop();
+    await new Promise(r => setTimeout(r, 800));
+  }
+
   // Polite teardown: tell the base we're done, then close the PC.
   disconnect() {
     try { this.selfDc?.sendMessageBinary(REQUEST_DISCONNECT); } catch (_) {}
@@ -182,7 +222,7 @@ class DoorphoneSource extends EventEmitter {
       if (this._users.size) {
         // A stream started during the flush window — keep the session and
         // re-arm the base instead of closing.
-        try { this.selfDc?.sendMessageBinary(REQUEST_CONNECT); } catch (_) {}
+        try { this.selfDc?.sendMessageBinary(this.requestConnect); } catch (_) {}
         return;
       }
       this.stop();
@@ -193,6 +233,9 @@ class DoorphoneSource extends EventEmitter {
     if (this.state === 'connecting' || this.state === 'connected') return;
     this.state = 'connecting';
     this._stopping = false;
+    // stop() (or preempt()) while we're still awaiting KVS below bumps the
+    // generation; bail out then instead of connecting a session nobody wants.
+    const gen = ++this._gen;
     this.firstVideoReceivedAt = 0;
     this._vLastSeq = -1;
     await this.udpBound;
@@ -221,6 +264,7 @@ class DoorphoneSource extends EventEmitter {
       }
     }
 
+    if (gen !== this._gen) { this.emit('log', 'connect cancelled'); return; }
     const pc = new nd.PeerConnection(this.viewerId, { iceServers, iceTransportPolicy: 'all' });
     this.pc = pc;
 
@@ -318,7 +362,7 @@ class DoorphoneSource extends EventEmitter {
     this.selfDc = selfDc;
     selfDc.onOpen(() => {
       try {
-        selfDc.sendMessageBinary(REQUEST_CONNECT);
+        selfDc.sendMessageBinary(this.requestConnect);
         this.emit('request-connect-sent');
       } catch (_) {}
     });
@@ -386,11 +430,22 @@ class DoorphoneSource extends EventEmitter {
       if (!this.videoTrack) return;
       // Keep asking the base for keyframes so iPhone's decoder always has a
       // recent IDR to resync against.
-      try { this.videoTrack.requestKeyframe(); } catch (_) {}
+      this._requestKeyframe();
       if (!this.firstVideoReceivedAt && this.selfDc) {
-        try { this.selfDc.sendMessageBinary(REQUEST_CONNECT); } catch (_) {}
+        try { this.selfDc.sendMessageBinary(this.requestConnect); } catch (_) {}
       }
     }, 2000);
+  }
+
+  // node-datachannel's requestKeyframe() does not catch libdatachannel's
+  // "Track is not open" (thrown while still connecting, or on the closed track
+  // of a previous session): the C++ exception escapes N-API and aborts the
+  // whole process. Only ask once the track is open.
+  _requestKeyframe() {
+    const t = this.videoTrack;
+    try {
+      if (t && t.isOpen()) t.requestKeyframe();
+    } catch (_) {}
   }
 
   _onVideoRtp(buf) {
@@ -408,7 +463,7 @@ class DoorphoneSource extends EventEmitter {
       else if (diff > 1) {
         this._vLost += diff - 1;
         // Request an immediate keyframe so the decoder can resync after loss.
-        try { this.videoTrack?.requestKeyframe(); } catch (_) {}
+        this._requestKeyframe();
       }
     }
     this._vLastSeq = seq;
@@ -430,11 +485,11 @@ class DoorphoneSource extends EventEmitter {
     target._dphConsumer = consumer;
     this._videoConsumers.add(consumer);
     // Ask the base for an IDR within ~1s so new consumers can start.
-    try { this.videoTrack?.requestKeyframe(); } catch (_) {}
+    this._requestKeyframe();
     // Re-arm the base: Request_Connect prompts it to resume sending RTP after
     // a prior session ended. selfDc.isOpen() often returns false even when the
     // channel works, so just attempt the send and let libdatachannel queue.
-    try { this.selfDc?.sendMessageBinary(REQUEST_CONNECT); } catch (_) {}
+    try { this.selfDc?.sendMessageBinary(this.requestConnect); } catch (_) {}
   }
 
   removeVideoConsumer(target) {
@@ -507,6 +562,7 @@ class DoorphoneSource extends EventEmitter {
 
   stop() {
     this._stopping = true;
+    this._gen++;
     if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     this.state = 'idle';
@@ -536,4 +592,4 @@ function writeSdpFile(dest, { videoPort, audioPort, host = '127.0.0.1' }) {
   fs.writeFileSync(dest, sdp);
 }
 
-module.exports = { DoorphoneSource, writeSdpFile };
+module.exports = { DoorphoneSource, writeSdpFile, buildRequestConnect, DEVICE_DOOR, DEVICE_CAMERA };

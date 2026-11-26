@@ -49,7 +49,7 @@ function isHkRegistered(accessory) {
   }
 }
 
-async function getState({ cfg, accessory }) {
+async function getState({ cfg, accessory, accessories }) {
   const credsDir = path.dirname(cfg.doorphone.credsPath);
   let unit = null;
   try {
@@ -61,28 +61,36 @@ async function getState({ cfg, accessory }) {
   }
   const paired = !!(files['cert.pem'] && files['privkey.pem']);
 
-  let setupUri = '';
-  let setupQrSvg = '';
-  if (accessory && accessory._accessoryInfo) {
-    try { setupUri = accessory.setupURI(); } catch (_) {}
-    if (setupUri) {
-      try {
-        setupQrSvg = await QRCode.toString(setupUri, {
-          type: 'svg', errorCorrectionLevel: 'Q', margin: 1, width: 220,
-        });
-      } catch (_) {}
+  // One entry per HomeKit camera (first door station + extra cameras).
+  const list = accessories && accessories.length ? accessories : (accessory ? [{ key: 'door0', accessory }] : []);
+  const cams = [];
+  for (const { key, accessory: acc } of list) {
+    let setupUri = '';
+    let setupQrSvg = '';
+    if (acc && acc._accessoryInfo) {
+      try { setupUri = acc.setupURI(); } catch (_) {}
+      if (setupUri) {
+        try {
+          setupQrSvg = await QRCode.toString(setupUri, {
+            type: 'svg', errorCorrectionLevel: 'Q', margin: 1, width: 220,
+          });
+        } catch (_) {}
+      }
     }
+    cams.push({ key, name: acc?.displayName || key, hkConnected: isHkRegistered(acc), setupUri, setupQrSvg });
   }
+  const main = cams.find(c => c.key === 'door0') || cams[0] || {};
 
   return {
     appName: 'Doorphone Bridge',
     version: PKG_VERSION,
     paired,
-    hkConnected: isHkRegistered(accessory),
+    hkConnected: !!main.hkConnected,
     accessoryName: cfg.accessory.name,
     pincode: cfg.accessory.pincode,
-    setupUri,
-    setupQrSvg,
+    setupUri: main.setupUri || '',
+    setupQrSvg: main.setupQrSvg || '',
+    accessories: cams,
     files,
     unit,
   };
@@ -242,6 +250,7 @@ async function handlePair({ req, res, cfg, logger, onPaired }) {
 function startWebUi(opts) {
   const { cfg, host = '0.0.0.0', port = 8080, logger = console.log } = opts;
   const getAccessory = () => (typeof opts.accessory === 'function' ? opts.accessory() : opts.accessory);
+  const getAccessories = () => (typeof opts.accessories === 'function' ? opts.accessories() : opts.accessories) || [];
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -298,7 +307,7 @@ function startWebUi(opts) {
 
         if (url.pathname === '/api/state') {
           try { opts.onStateQuery?.(); } catch (_) {}
-          const s = await getState({ cfg, accessory: getAccessory() });
+          const s = await getState({ cfg, accessory: getAccessory(), accessories: getAccessories() });
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
           return res.end(JSON.stringify(s));
         }
@@ -311,7 +320,7 @@ function startWebUi(opts) {
           });
           const send = async (reason) => {
             try {
-              const s = await getState({ cfg, accessory: getAccessory() });
+              const s = await getState({ cfg, accessory: getAccessory(), accessories: getAccessories() });
               res.write(`event: state\ndata: ${JSON.stringify({ ...s, _reason: reason })}\n\n`);
             } catch (_) {}
           };
