@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 970 994" role="img" aria-labelledby="title desc">
+  <title id="title">ライブ視聴のシーケンス</title>
+  <desc id="desc">Apple Home でカメラを開いてから映像が届き、閉じて切断されるまでのメッセージの流れ。</desc>
+  <style>
+    text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+    .t { font-size: 14px; font-weight: 600; }
+    .s { font-size: 11.5px; fill: #59636e; }
+    .msg { font-size: 12.5px; }
+    .m { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+    .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+    .blue { fill: #ddf4ff; stroke: #54aeff; }
+    .green { fill: #dafbe1; stroke: #4ac26b; }
+    .yellow { fill: #fff8c5; stroke: #d4a72c; }
+    .red { fill: #ffebe9; stroke: #ff8182; }
+    .purple { fill: #fbefff; stroke: #c297ff; }
+    .life { stroke: #8c959f; stroke-width: 1; stroke-dasharray: 4 4; }
+    .ar { stroke: #59636e; stroke-width: 1.4; fill: none; }
+    .ar.media { stroke: #1a7f37; stroke-width: 2.2; }
+    .ar.ret { stroke-dasharray: 5 3; }
+    .ah { fill: #59636e; }
+    .ahg { fill: #1a7f37; }
+    .note { fill: #fff8c5; stroke: #d4a72c; stroke-width: 1; }
+    .phase { fill: #f6f8fa; }
+    .ph { font-size: 11.5px; font-weight: 600; fill: #59636e; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #e6edf3; }
+      .s, .ph { fill: #9198a1; }
+      .bx { fill: #151b23; stroke: #656c76; }
+      .blue { fill: #121d2f; stroke: #1f6feb; }
+      .green { fill: #12261e; stroke: #2ea043; }
+      .yellow { fill: #272115; stroke: #9e6a03; }
+      .red { fill: #2c1517; stroke: #da3633; }
+      .purple { fill: #211830; stroke: #8957e5; }
+      .life { stroke: #656c76; }
+      .ar { stroke: #9198a1; }
+      .ar.media { stroke: #3fb950; }
+      .ah { fill: #9198a1; }
+      .ahg { fill: #3fb950; }
+      .note { fill: #272115; stroke: #9e6a03; }
+      .phase { fill: #151b23; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="ahg"/>
+    </marker>
+  </defs>
+
+  <line class="life" x1="90" y1="64" x2="90" y2="988"/>
+  <line class="life" x1="290" y1="64" x2="290" y2="988"/>
+  <line class="life" x1="500" y1="64" x2="500" y2="988"/>
+  <line class="life" x1="700" y1="64" x2="700" y2="988"/>
+  <line class="life" x1="880" y1="64" x2="880" y2="988"/>
+  <rect class="bx blue" x="15" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="90" y="34" text-anchor="middle">Apple Home</text>
+  <text class="s" x="90" y="53" text-anchor="middle">iPhone など</text>
+  <rect class="bx blue" x="215" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="290" y="34" text-anchor="middle">StreamingDelegate</text>
+  <text class="m s" x="290" y="53" text-anchor="middle">streaming.js</text>
+  <rect class="bx green" x="425" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="500" y="34" text-anchor="middle">DoorphoneSource</text>
+  <text class="m s" x="500" y="53" text-anchor="middle">doorphone-source.js</text>
+  <rect class="bx " x="625" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="700" y="34" text-anchor="middle">AWS KVS</text>
+  <text class="s" x="700" y="53" text-anchor="middle">シグナリング</text>
+  <rect class="bx green" x="805" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="880" y="34" text-anchor="middle">親機</text>
+  <text class="s" x="880" y="53" text-anchor="middle">VL-X70AH</text>
+  <rect class="phase" x="10" y="84" width="950" height="22" rx="4"/>
+  <text class="ph" x="20" y="99">① HomeKit のストリーム開始</text>
+  <line class="ar" x1="90" y1="130" x2="286" y2="130" marker-end="url(#a)"/>
+  <text class="msg" x="190" y="124" text-anchor="middle">prepareStream（SRTP 鍵・ポート交換）</text>
+  <line class="ar" x1="90" y1="164" x2="286" y2="164" marker-end="url(#a)"/>
+  <text class="msg" x="190" y="158" text-anchor="middle">startStream（解像度・コーデック決定）</text>
+  <rect class="note" x="174" y="185" width="232" height="40" rx="4"/>
+  <text class="s" x="290" y="199" text-anchor="middle">ffmpeg を 2 本起動</text>
+  <text class="s" x="290" y="215" text-anchor="middle">映像 copy / 音声 Opus</text>
+  <line class="ar" x1="290" y1="250" x2="496" y2="250" marker-end="url(#a)"/>
+  <text class="msg" x="395" y="244" text-anchor="middle">acquire(hk:&lt;session&gt;)</text>
+  <rect class="note" x="340" y="271" width="320" height="40" rx="4"/>
+  <text class="s" x="500" y="285" text-anchor="middle">beforeStart: 録画セッションを解放</text>
+  <text class="s" x="500" y="301" text-anchor="middle">他カメラの source を preempt()</text>
+  <rect class="phase" x="10" y="324" width="950" height="22" rx="4"/>
+  <text class="ph" x="20" y="339">② KVS シグナリング（kvs_creds.json の一時クレデンシャルで署名）</text>
+  <line class="ar" x1="500" y1="370" x2="696" y2="370" marker-end="url(#a)"/>
+  <text class="msg" x="600" y="364" text-anchor="middle">Describe / GetEndpoint / GetIceServerConfig</text>
+  <line class="ar" x1="500" y1="404" x2="696" y2="404" marker-end="url(#a)"/>
+  <text class="msg" x="600" y="398" text-anchor="middle">WSS 接続 → SDP offer + ICE candidate</text>
+  <line class="ar" x1="700" y1="438" x2="876" y2="438" marker-end="url(#a)"/>
+  <text class="msg" x="790" y="432" text-anchor="middle">offer を転送</text>
+  <line class="ar ret" x1="880" y1="472" x2="504" y2="472" marker-end="url(#a)"/>
+  <text class="msg" x="690" y="466" text-anchor="middle">SDP answer + ICE candidate（KVS 経由）</text>
+  <rect class="phase" x="10" y="494" width="950" height="22" rx="4"/>
+  <text class="ph" x="20" y="509">③ P2P 接続（LAN 内ならホスト候補で直結）</text>
+  <line class="ar" x1="504" y1="540" x2="876" y2="540" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="msg" x="690" y="534" text-anchor="middle">ICE → DTLS → SRTP / SCTP 確立</text>
+  <line class="ar" x1="880" y1="574" x2="504" y2="574" marker-end="url(#a)"/>
+  <text class="msg" x="690" y="568" text-anchor="middle">DataChannel「MasterToViewer」を開く</text>
+  <line class="ar" x1="500" y1="608" x2="876" y2="608" marker-end="url(#a)"/>
+  <text class="msg m" x="690" y="602" text-anchor="middle">Request_Connect(device, devno, MONITOR)</text>
+  <line class="ar ret" x1="880" y1="642" x2="504" y2="642" marker-end="url(#a)"/>
+  <text class="msg m" x="690" y="636" text-anchor="middle">Response_Connect(result=true)</text>
+  <rect class="phase" x="10" y="664" width="950" height="22" rx="4"/>
+  <text class="ph" x="20" y="679">④ 映像・音声</text>
+  <line class="ar media" x1="880" y1="710" x2="504" y2="710" marker-end="url(#g)"/>
+  <text class="msg" x="690" y="704" text-anchor="middle">H264（pt 101）+ PCMU の RTP</text>
+  <line class="ar media" x1="500" y1="744" x2="294" y2="744" marker-end="url(#g)"/>
+  <text class="msg" x="395" y="738" text-anchor="middle">H264 NAL（Annex-B）/ PCMU を stdin へ</text>
+  <line class="ar media" x1="290" y1="778" x2="94" y2="778" marker-end="url(#g)"/>
+  <text class="msg" x="190" y="772" text-anchor="middle">SRTP: H264 そのまま + Opus 16 kHz</text>
+  <rect class="phase" x="10" y="800" width="950" height="22" rx="4"/>
+  <text class="ph" x="20" y="815">⑤ 終了</text>
+  <line class="ar" x1="90" y1="846" x2="286" y2="846" marker-end="url(#a)"/>
+  <text class="msg" x="190" y="840" text-anchor="middle">stopStream</text>
+  <line class="ar" x1="290" y1="880" x2="496" y2="880" marker-end="url(#a)"/>
+  <text class="msg" x="395" y="874" text-anchor="middle">release()</text>
+  <rect class="note" x="359" y="901" width="282" height="24" rx="4"/>
+  <text class="s" x="500" y="915" text-anchor="middle">15 秒の猶予（すぐ再開されることが多い）</text>
+  <line class="ar" x1="500" y1="950" x2="876" y2="950" marker-end="url(#a)"/>
+  <text class="msg" x="690" y="944" text-anchor="middle">Request_Disconnect → PeerConnection を閉じる</text>
+</svg>

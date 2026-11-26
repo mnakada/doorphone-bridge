@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>doorphone-hap ドキュメント</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout" style="grid-template-columns: minmax(0, 1fr);">
+<main>
+<header class="page">
+  <p class="kicker">doorphone-hap</p>
+  <h1>ドキュメント</h1>
+  <p class="lead">Panasonic のドアホン親機 VL-X70AH の映像を、Apple Home のカメラとして見るためのブリッジ。
+  純正アプリ「ドアホンコネクト S」を解析して再実装した Node.js 実装の、内部の解説です。</p>
+</header>
+
+<div class="cards">
+  <a class="card" href="code.html">
+    <h2>コードの詳細な説明</h2>
+    <p>起動からライブ配信、録画、ペアリング、複数カメラまで、<code>hap/</code> の内部構造を処理の流れに沿って解説します。</p>
+  </a>
+  <a class="card" href="analysis.html">
+    <h2>ドアホンの解析方法</h2>
+    <p>APK の逆コンパイルから TLS の中間者化、通信プロトコルの特定、WebRTC での映像受信まで、進めた順に解説します。</p>
+  </a>
+</div>
+
+<h2>このブリッジでできること</h2>
+<ul>
+  <li>玄関子機・増設カメラ（最大 4 台）を、それぞれ Apple Home のカメラとして視聴。</li>
+  <li>親機 → iPhone の片方向音声。</li>
+  <li>親機 SD の録画の一覧・再生、NAS（SMB）への自動バックアップ。</li>
+  <li>初回ペアリングからライブ視聴まで Node.js で完結（Android アプリ不要）。Raspberry Pi 向けの <code>.deb</code> を提供。</li>
+</ul>
+
+<div class="callout">
+  <strong>関連</strong>
+  <p>プロジェクトの概要とセットアップ手順は、リポジトリ直下の <code>README.md</code> を参照してください。</p>
+</div>
+
+<footer class="page">doorphone-hap</footer>
+</main>
+</div>
+</body>
+</html>

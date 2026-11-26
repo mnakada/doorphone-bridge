@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 690" role="img" aria-labelledby="title desc">
+  <title id="title">ペアリングのシーケンス</title>
+  <desc id="desc">親機の QR コードからクライアント証明書を得るまでの流れ。</desc>
+  <style>
+    text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+    .t { font-size: 14px; font-weight: 600; }
+    .s { font-size: 11.5px; fill: #59636e; }
+    .msg { font-size: 12.5px; }
+    .m { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+    .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+    .blue { fill: #ddf4ff; stroke: #54aeff; }
+    .green { fill: #dafbe1; stroke: #4ac26b; }
+    .yellow { fill: #fff8c5; stroke: #d4a72c; }
+    .red { fill: #ffebe9; stroke: #ff8182; }
+    .purple { fill: #fbefff; stroke: #c297ff; }
+    .life { stroke: #8c959f; stroke-width: 1; stroke-dasharray: 4 4; }
+    .ar { stroke: #59636e; stroke-width: 1.4; fill: none; }
+    .ar.media { stroke: #1a7f37; stroke-width: 2.2; }
+    .ar.ret { stroke-dasharray: 5 3; }
+    .ah { fill: #59636e; }
+    .ahg { fill: #1a7f37; }
+    .note { fill: #fff8c5; stroke: #d4a72c; stroke-width: 1; }
+    .phase { fill: #f6f8fa; }
+    .ph { font-size: 11.5px; font-weight: 600; fill: #59636e; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #e6edf3; }
+      .s, .ph { fill: #9198a1; }
+      .bx { fill: #151b23; stroke: #656c76; }
+      .blue { fill: #121d2f; stroke: #1f6feb; }
+      .green { fill: #12261e; stroke: #2ea043; }
+      .yellow { fill: #272115; stroke: #9e6a03; }
+      .red { fill: #2c1517; stroke: #da3633; }
+      .purple { fill: #211830; stroke: #8957e5; }
+      .life { stroke: #656c76; }
+      .ar { stroke: #9198a1; }
+      .ar.media { stroke: #3fb950; }
+      .ah { fill: #9198a1; }
+      .ahg { fill: #3fb950; }
+      .note { fill: #272115; stroke: #9e6a03; }
+      .phase { fill: #151b23; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="ahg"/>
+    </marker>
+  </defs>
+
+  <line class="life" x1="80" y1="64" x2="80" y2="684"/>
+  <line class="life" x1="270" y1="64" x2="270" y2="684"/>
+  <line class="life" x1="470" y1="64" x2="470" y2="684"/>
+  <line class="life" x1="670" y1="64" x2="670" y2="684"/>
+  <line class="life" x1="860" y1="64" x2="860" y2="684"/>
+  <rect class="bx purple" x="5" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="80" y="34" text-anchor="middle">利用者</text>
+  <text class="s" x="80" y="53" text-anchor="middle">親機 / ブラウザ</text>
+  <rect class="bx red" x="195" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="270" y="34" text-anchor="middle">pair.js</text>
+  <text class="s" x="270" y="53" text-anchor="middle">doorphone-hap</text>
+  <rect class="bx red" x="395" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="470" y="34" text-anchor="middle">Panasonic クラウド</text>
+  <text class="m s" x="470" y="53" text-anchor="middle">intercom.iot-webrtc.net</text>
+  <rect class="bx " x="595" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="670" y="34" text-anchor="middle">AWS KVS</text>
+  <text class="s" x="670" y="53" text-anchor="middle">シグナリング</text>
+  <rect class="bx green" x="785" y="12" width="150" height="52" rx="8"/>
+  <text class="t" x="860" y="34" text-anchor="middle">親機</text>
+  <text class="s" x="860" y="53" text-anchor="middle">VL-X70AH</text>
+  <rect class="phase" x="10" y="84" width="940" height="22" rx="4"/>
+  <text class="ph" x="20" y="99">① QR コード</text>
+  <line class="ar" x1="80" y1="130" x2="266" y2="130" marker-end="url(#a)"/>
+  <text class="msg" x="175" y="124" text-anchor="middle">QR 画像 または URL（/reg/&lt;token&gt;）</text>
+  <rect class="note" x="154" y="151" width="232" height="24" rx="4"/>
+  <text class="s" x="270" y="165" text-anchor="middle">token は 1 回しか使えない</text>
+  <rect class="phase" x="10" y="188" width="940" height="22" rx="4"/>
+  <text class="ph" x="20" y="203">② クラウド登録</text>
+  <line class="ar" x1="270" y1="234" x2="466" y2="234" marker-end="url(#a)"/>
+  <text class="msg m" x="370" y="228" text-anchor="middle">GET /reg/&lt;token&gt;  x-auth-hash: HMAC</text>
+  <line class="ar ret" x1="470" y1="268" x2="274" y2="268" marker-end="url(#a)"/>
+  <text class="msg" x="370" y="262" text-anchor="middle">AWS 一時クレデンシャル + channelName + PeerIdPrefix</text>
+  <rect class="note" x="98" y="289" width="345" height="40" rx="4"/>
+  <text class="s" x="270" y="303" text-anchor="middle">EC P-256 鍵ペアと CSR を生成</text>
+  <text class="s" x="270" y="319" text-anchor="middle">mobileDeviceId = SP_&lt;UUID&gt;</text>
+  <rect class="phase" x="10" y="342" width="940" height="22" rx="4"/>
+  <text class="ph" x="20" y="357">③ 親機への登録要求（ClientId = &lt;PeerIdPrefix&gt;-&lt;mobileDeviceId&gt;）</text>
+  <line class="ar" x1="270" y1="388" x2="666" y2="388" marker-end="url(#a)"/>
+  <text class="msg" x="470" y="382" text-anchor="middle">シグナリング（ライブ視聴と同じ手順）</text>
+  <line class="ar" x1="274" y1="422" x2="856" y2="422" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="msg" x="565" y="416" text-anchor="middle">WebRTC 接続 + DataChannel</text>
+  <line class="ar" x1="270" y1="456" x2="856" y2="456" marker-end="url(#a)"/>
+  <text class="msg m" x="565" y="450" text-anchor="middle">Request_Pairing{csr(PEM), mobileDeviceId, …}</text>
+  <line class="ar ret" x1="860" y1="490" x2="274" y2="490" marker-end="url(#a)"/>
+  <text class="msg m" x="565" y="484" text-anchor="middle">Response_Pairing{result}</text>
+  <rect class="note" x="742" y="511" width="208" height="24" rx="4"/>
+  <text class="s" x="846" y="525" text-anchor="middle">CSR に署名して証明書を発行</text>
+  <line class="ar ret" x1="860" y1="560" x2="274" y2="560" marker-end="url(#a)"/>
+  <text class="msg m" x="565" y="554" text-anchor="middle">Notify_AnswerPairing{client_cert(PEM)}</text>
+  <rect class="phase" x="10" y="582" width="940" height="22" rx="4"/>
+  <text class="ph" x="20" y="597">④ 保存</text>
+  <rect class="note" x="35" y="615" width="470" height="40" rx="4"/>
+  <text class="s" x="270" y="629" text-anchor="middle">cert.pem / privkey.pem / unit.json を</text>
+  <text class="s" x="270" y="645" text-anchor="middle">/etc/doorphone-hap に書き込み → 再起動</text>
+</svg>

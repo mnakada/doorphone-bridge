@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コードの詳細な説明 — doorphone-hap</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc" aria-label="目次">
+  <a class="home" href="index.html">← doorphone-hap ドキュメント</a>
+  <ol>
+    <li><a href="#overview">1. 全体像</a></li>
+    <li><a href="#files">2. ファイル構成</a></li>
+    <li><a href="#boot">3. 起動の流れ</a></li>
+    <li><a href="#creds">4. クレデンシャル更新</a></li>
+    <li><a href="#source">5. ライブ接続</a>
+      <ol>
+        <li><a href="#source-signaling">シグナリングと SDP</a></li>
+        <li><a href="#source-dc">DataChannel と Request_Connect</a></li>
+        <li><a href="#source-ondemand">オンデマンド接続</a></li>
+        <li><a href="#source-robust">壊れにくくする工夫</a></li>
+      </ol>
+    </li>
+    <li><a href="#multi">6. 複数カメラ</a></li>
+    <li><a href="#streaming">7. HomeKit 配信</a>
+      <ol>
+        <li><a href="#streaming-video">映像</a></li>
+        <li><a href="#streaming-audio">音声</a></li>
+        <li><a href="#streaming-snapshot">スナップショット</a></li>
+      </ol>
+    </li>
+    <li><a href="#records">8. 録画（BaseRpc / RecordService）</a></li>
+    <li><a href="#nas">9. NAS バックアップ</a></li>
+    <li><a href="#pairing">10. ペアリング</a></li>
+    <li><a href="#webui">11. Web UI と API</a></li>
+    <li><a href="#config">12. 設定とファイル</a></li>
+    <li><a href="#packaging">13. パッケージと運用</a></li>
+    <li><a href="#pitfalls">14. 実装上の注意点</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="page">
+  <p class="kicker">doorphone-hap ドキュメント</p>
+  <h1>コードの詳細な説明</h1>
+  <p class="lead">Panasonic のドアホン親機 VL-X70AH の映像を Apple Home のカメラとして見せるブリッジ
+  <code>hap/</code> の内部構造を、処理の流れに沿って説明します。プロトコルをどう調べたかは
+  <a href="analysis.html">ドアホンの解析方法</a>を参照してください。</p>
+</header>
+
+<!-- ============================================================ -->
+<h2 id="overview">1. 全体像</h2>
+
+<p>doorphone-hap は Raspberry Pi 上で動く 1 つの Node.js プロセスです。純正アプリ「ドアホンコネクト S」がスマホで行っていること
+（親機とのペアリング、クラウド経由のクレデンシャル取得、WebRTC での映像受信）を再実装し、受け取った映像を
+HomeKit Accessory Protocol（HAP）のカメラとして公開します。</p>
+
+<figure class="diagram">
+  <img src="img/architecture.svg" alt="doorphone-hap の全体構成図。左に Apple Home とブラウザ、中央に Raspberry Pi 上のモジュール群、右に親機・NAS・Panasonic クラウド。">
+  <figcaption>図 1. 全体構成。中央の枠内が <code>hap/</code> のモジュールで、右列が親機側、左列が利用者側との通信を受け持ちます。</figcaption>
+</figure>
+
+<p>親機との通信には 3 つの経路があります。</p>
+<ul>
+  <li><strong>AWS IoT（MQTT）</strong>：ペアリングで得たクライアント証明書で接続し、WebRTC 用の AWS 一時クレデンシャルを親機から受け取ります。</li>
+  <li><strong>AWS Kinesis Video Streams（KVS）WebRTC</strong>：一時クレデンシャルでシグナリングチャネルに接続し、親機と P2P で接続します。映像・音声は RTP、コマンドは DataChannel 上の Protobuf です。</li>
+  <li><strong>Panasonic クラウド（<code>/reg</code>）</strong>：初回ペアリングのときだけ使います。</li>
+</ul>
+
+<p>親機は同じ端末からのセッションを 1 本しか受け付けないため、ライブ視聴・録画取得・カメラ切り替えは
+すべて「親機の取り合い」を調停する形で実装されています（<a href="#multi">6 章</a>、<a href="#records">8 章</a>）。</p>
+
+<!-- ============================================================ -->
+<h2 id="files">2. ファイル構成</h2>
+
+<table>
+  <thead><tr><th>パス</th><th>役割</th></tr></thead>
+  <tbody>
+    <tr><td><code>hap/accessory.js</code></td><td>エントリポイント。各モジュールを組み立て、カメラごとに HAP アクセサリを公開する。</td></tr>
+    <tr><td><code>hap/bin/doorphone-hap</code></td><td>CLI（<code>serve</code> / <code>pair</code> / <code>status</code> / <code>version</code>）。systemd は <code>serve</code> で起動する。</td></tr>
+    <tr><td><code>hap/config.js</code></td><td>設定ファイル（JSON）と環境変数を読み、既定値とマージする。</td></tr>
+    <tr><td><code>hap/creds-refresher.js</code></td><td>AWS IoT MQTT で一時クレデンシャルを取得し続ける。親機側の登録解除も検出する。</td></tr>
+    <tr><td><code>hap/doorphone-source.js</code></td><td>カメラ 1 台分のライブセッション。KVS WebRTC で親機に接続し、H264 と PCMU を受け取る。</td></tr>
+    <tr><td><code>hap/h264-depay.js</code></td><td>H264 の RTP をデパケタイズし、Annex-B 形式の NAL ユニットにする（RFC 6184）。</td></tr>
+    <tr><td><code>hap/streaming.js</code></td><td>HAP の CameraStreamingDelegate。ffmpeg を起動して HomeKit に SRTP で送る。スナップショットも担当。</td></tr>
+    <tr><td><code>hap/srtp.js</code></td><td>最小限の SRTP 暗号化（AES_CM_128_HMAC_SHA1_80）。音声の RTP タイムスタンプを書き換えるために自前で持つ。</td></tr>
+    <tr><td><code>hap/base-rpc.js</code></td><td>映像を伴わない「コマンド専用」の WebRTC セッション。request_id で応答を突き合わせる。</td></tr>
+    <tr><td><code>hap/records.js</code></td><td>親機 SD の録画一覧・サムネイル・動画の取得とキャッシュ。親機の状態取得（GetState）もここ経由。</td></tr>
+    <tr><td><code>hap/nas-sync.js</code></td><td>録画を定期的に SMB 共有へコピーする。</td></tr>
+    <tr><td><code>hap/pair.js</code></td><td>QR コードからのペアリング（CLI とライブラリの両用）。</td></tr>
+    <tr><td><code>hap/pair-web.js</code></td><td>Web UI の HTTP サーバと JSON / SSE API。</td></tr>
+    <tr><td><code>hap/web/</code></td><td>Web UI 本体（Vue 3 の SFC をブラウザで直接読み込む。ビルド不要）。</td></tr>
+    <tr><td><code>hap/pickport.js</code></td><td>空き UDP ポートを 1 つ確保するユーティリティ。</td></tr>
+    <tr><td><code>proto/gen/</code></td><td>アプリから復元した Protobuf 定義（<code>webrtc_if.proto</code> ほか）。<code>base-rpc.js</code> が実行時に読み込む。</td></tr>
+    <tr><td><code>proto/*.proto</code></td><td>初期に手書きした最小限の定義。<code>pair.js</code> が使う。</td></tr>
+    <tr><td><code>packaging/</code></td><td>.deb のレイアウト、systemd ユニット、コンテナ内ビルド用スクリプト。</td></tr>
+    <tr><td><code>research/</code></td><td>解析時の試作コードとメモ（パッケージには含まれない）。</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="boot">3. 起動の流れ</h2>
+
+<p><code>accessory.js</code> は上から順に次のことを行います。</p>
+<ol class="steps">
+  <li><strong>設定の読み込み</strong>：<code>CONFIG_PATH</code>（既定 <code>/etc/doorphone-hap/config.json</code>）を読み、<code>config.js</code> の既定値とマージします。</li>
+  <li><strong>Web UI の起動</strong>：ペアリング前でも使えるよう、最初に HTTP サーバ（:8080）を立てます。</li>
+  <li><strong>ペアリング済みかの判定</strong>：<code>cert.pem</code> も <code>kvs_creds.json</code> も無ければ、Web UI だけを動かして待ちます。</li>
+  <li><strong>CredsRefresher の開始</strong>：MQTT に接続して一時クレデンシャルを取得します（<a href="#creds">4 章</a>）。</li>
+  <li><strong>RecordService と NasSync の生成</strong>：録画機能と NAS 同期を準備します。この時点では親機に接続しません。</li>
+  <li><strong>カメラの公開</strong>：<code>/var/lib/doorphone-hap/devices.json</code> にキャッシュされた機器一覧（無ければ玄関子機 1 台）で
+    アクセサリをすぐ公開し、クレデンシャル取得後に親機から最新の一覧を取り直します（<a href="#multi">6 章</a>）。</li>
+</ol>
+
+<p>終了処理は <code>shutdownHooks</code> 配列に登録しておき、SIGTERM / SIGINT や再ペアリング後の再起動のときにまとめて実行します。
+Web UI から再ペアリングに成功すると、新しい証明書で起動し直すために終了コード 75 で終了し、systemd が
+<code>RestartForceExitStatus=75</code> で再起動します。</p>
+
+<!-- ============================================================ -->
+<h2 id="creds">4. クレデンシャル更新（creds-refresher.js）</h2>
+
+<p>KVS に接続するには AWS の一時クレデンシャルが必要です。これは約 10 分で失効するので、ペアリングで得たクライアント証明書を使って
+AWS IoT Core の MQTT 経由で親機に定期的に発行してもらいます。</p>
+
+<figure class="diagram">
+  <img src="img/creds-sequence.svg" alt="CredsRefresher が AWS IoT Core を介して親機に GET_SIGNALING_CHANNEL を送り、NOTIFY_KVS_CREDENTIAL を受け取るシーケンス図。">
+  <figcaption>図 2. クレデンシャル更新。親機とブリッジは同じ MQTT トピックを購読していて、宛先（<code>to</code>）で自分宛てか判断します。</figcaption>
+</figure>
+
+<ul>
+  <li>MQTT の clientId は <code>unit.json</code> の <code>mobileDeviceId</code>（<code>SP_&lt;UUID&gt;</code>）です。トピックは <code>doorphone/comm/&lt;unitDeviceId&gt;</code>。</li>
+  <li>送るメッセージは <code>{to: unitDeviceId, from: clientId, data: {command: "GET_SIGNALING_CHANNEL", payload: null}}</code>。</li>
+  <li>応答 <code>NOTIFY_KVS_CREDENTIAL</code> の <code>payload</code>（<code>AccessKeyId</code> / <code>SecretAccessKey</code> / <code>SessionToken</code> / <code>Expiration</code> / <code>channelName</code>）を
+    <code>kvs_creds.json</code> にそのまま書きます。他のモジュールは接続のたびにこのファイルを読みます。</li>
+  <li>失効の 2 分前に再要求するほか、60 秒ごとにも要求します。後者は登録解除の検出を兼ねます。</li>
+</ul>
+
+<h3>登録解除の検出</h3>
+<p>親機側でスマホ登録を解除しても通知は来ません。そのため次のどちらかで判断し、<code>revoked</code> イベントを出します。</p>
+<ul>
+  <li>応答の <code>payload</code> が <code>{error: "NOT_REGISTERED"}</code> だった。</li>
+  <li>要求への応答が 120 秒ずつ 3 回続けて無かった。</li>
+</ul>
+<p><code>accessory.js</code> は <code>revoked</code> を受けると証明書・秘密鍵・<code>kvs_creds.json</code> を <code>*.revoked.&lt;日時&gt;</code> にリネームし、
+Web UI を「未ペアリング」表示に戻します。Web UI を開いたときにも <code>checkNow()</code> で即座に確認します。</p>
+
+<!-- ============================================================ -->
+<h2 id="source">5. ライブ接続（doorphone-source.js）</h2>
+
+<p><code>DoorphoneSource</code> はカメラ 1 台分のライブセッションです。玄関子機なら
+<code>device = DEVICE_DOOR(1)</code>、増設カメラなら <code>DEVICE_CAMERA(2)</code> で、<code>devno</code> は 0 始まりの番号です。</p>
+
+<figure class="diagram">
+  <img src="img/live-sequence.svg" alt="Apple Home でカメラを開いてから、KVS シグナリング、P2P 接続、Request_Connect、映像配信、終了までのシーケンス図。">
+  <figcaption>図 3. ライブ視聴のシーケンス。② のシグナリングは AWS を経由しますが、③ 以降の映像は LAN 内で直結することが多いです。</figcaption>
+</figure>
+
+<h3 id="source-signaling">シグナリングと SDP</h3>
+<ol>
+  <li><code>kvs_creds.json</code> を読み、<code>DescribeSignalingChannel</code> → <code>GetSignalingChannelEndpoint</code>（Role = VIEWER）→
+    <code>GetIceServerConfig</code> で ARN、WSS / HTTPS エンドポイント、TURN サーバを得ます。</li>
+  <li><code>node-datachannel</code> の <code>PeerConnection</code> を、KVS の clientId を <strong><code>mobileDeviceId</code></strong> にして作ります。
+    ペアリング時に登録した ID と一致しないと、接続はできても映像が 1 パケットも来ません。</li>
+  <li>offer は純正アプリと同じ形にします。これが違うと親機は映像を送ってきません。
+    <ul>
+      <li><code>m=audio</code>（mid 0）：<strong>sendrecv</strong>。Opus / G722 / PCMU / PCMA と SSRC 付き。</li>
+      <li><code>m=video</code>（mid 1）：<strong>recvonly</strong>。VP8 と H264 2 種（pt 99 / 101）、それぞれ RTX 付き。</li>
+      <li><code>a=ice-options:trickle</code> を補います。</li>
+    </ul>
+  </li>
+  <li>offer と ICE 候補は KVS の WebSocket（<code>amazon-kinesis-video-streams-webrtc</code> の <code>SignalingClient</code>）で送り、answer と候補を受け取ります。</li>
+</ol>
+
+<div class="callout">
+  <strong>コールバックは先に登録する</strong>
+  <p>node-datachannel は <code>addTrack()</code> や <code>createDataChannel()</code> を呼んだ瞬間にネゴシエーションを始めます。
+  <code>onLocalDescription</code> などを後から登録すると offer を取り逃がすので、すべて先に登録してからトラックを追加しています。</p>
+</div>
+
+<h3 id="source-dc">DataChannel と Request_Connect</h3>
+<p>SCTP が確立すると、親機が <code>MasterToViewer</code> という DataChannel を開いてきます。ただし親機は
+<strong>こちらが作った DataChannel からしかコマンドを読みません</strong>。そこで自分で <code>ViewerToMaster</code> を作り、
+そこに Protobuf の <code>WebRtcMessage</code> を書き込みます。親機は自分側 DC の DCEP OPEN に ACK を返さないので、
+<code>onOpen</code> が来ないまま送ることになりますが、データは届きます。</p>
+
+<p>モニター開始の <code>Request_Connect</code> は 11〜13 バイトなので手でエンコードしています（<code>buildRequestConnect()</code>）。</p>
+<pre><code>08 01            request_id = 1
+10 01            version = VERSION_1（必須として扱う）
+a2 06 &lt;len&gt;      field 100 = request_connect
+   08 &lt;device&gt;   device: 1 = DEVICE_DOOR, 2 = DEVICE_CAMERA
+   10 &lt;devno&gt;    devno（0 のときは省略される）
+   20 02         type = TYPE_MONITOR
+
+玄関子機 1  : 08011001a2060408012002
+カメラ 1    : 08011001a2060408022002
+カメラ 2    : 08011001a20606080210012002</code></pre>
+<p>終了時は <code>Request_Disconnect</code>（<code>08021001c20600</code>）を送ってから PeerConnection を閉じます。
+送らずに閉じると、親機の画面に「スマホで使用中」がしばらく残ります。</p>
+
+<p>受信した RTP は自分で追加したトラックの <code>onMessage</code> に届きます（<code>pc.onTrack</code> はリモートが追加したトラックにしか発火しません）。
+映像は <code>H264Depay</code> で NAL ユニットにして、登録された消費者（ffmpeg の stdin）に配ります。
+新しい消費者には、最初の IDR が来たときにキャッシュ済みの SPS / PPS を前に付けて渡すので、ffmpeg のデコーダが途中から正しく始められます。
+音声は RTP ヘッダを外した PCMU のペイロードを配ります。</p>
+
+<h3 id="source-ondemand">オンデマンド接続</h3>
+<p>セッションを張っている間は親機の画面に「スマホで使用中」と出て、親機のモニター操作ができなくなります。
+そこで HomeKit のストリームがある間だけ接続します。</p>
+<ul>
+  <li><code>acquire(tag)</code>：利用者を登録し、未接続なら <code>beforeStart</code> フック（録画セッションの解放、他カメラの preempt）を実行してから接続します。</li>
+  <li><code>release(tag)</code>：利用者を外します。誰もいなくなってから 15 秒待って切断します。HomeKit はストリームを頻繁に張り直すので、この猶予があると再接続の待ちが減ります。</li>
+  <li><code>yieldIfUnused()</code>：猶予期間で残っているだけのセッションを即座に閉じます。録画機能が親機を使いたいときに呼ばれます。</li>
+  <li>利用中に切断された場合は 2 秒後に再接続し、接続の開始に失敗した場合も 3 秒ごとに再試行します。</li>
+</ul>
+
+<h3 id="source-robust">壊れにくくする工夫</h3>
+<ul>
+  <li><strong>接続処理の世代番号</strong>：<code>start()</code> は KVS の API を await している間に <code>stop()</code> されることがあります。
+    そのまま進むと誰も使わないセッションが親機を握り続けるので、<code>_gen</code> を比較して古い接続処理は中断します。</li>
+  <li><strong>キーフレーム要求の保護</strong>：2 秒ごとと、パケットロス検出時に PLI（<code>requestKeyframe()</code>）を送ります。
+    node-datachannel 0.33 の <code>requestKeyframe()</code> は、トラックが開く前に呼ぶとネイティブ例外がそのまま抜けて<strong>プロセスごと異常終了</strong>します
+    （JavaScript の try/catch では捕まりません）。そのため <code>isOpen()</code> を確認してから呼びます。</li>
+  <li><strong>無音の送信</strong>：offer で音声を sendrecv にしているので、20 ms ごとに無音の PCMU（0xFF × 160 バイト）を親機へ送り続けます。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="multi">6. 複数カメラ</h2>
+
+<p>親機には玄関子機を最大 3 台、増設カメラを最大 4 台つなげられます。ブリッジは機器ごとに <code>DoorphoneSource</code> と HAP アクセサリを 1 組ずつ作ります。</p>
+
+<h3>機器一覧の取得</h3>
+<p>親機に <code>Request_GetState</code> を送ると、<code>state.door.doors[]</code> と <code>state.camera.cameras[]</code> が返ります。
+配列の添字がそのまま <code>devno</code> で、未登録の枠は空のオブジェクトです。<code>enable: true</code> の枠だけを公開します。</p>
+<pre><code>door.doors    = [{enable: true, name: "玄関子機1", …}, {}, {}]
+camera.cameras = [{enable: true, name: "カメラ1"}, {}, {}, {}]
+→ door0（DEVICE_DOOR, 0）, camera0（DEVICE_CAMERA, 0）</code></pre>
+<p>一覧は <code>devices.json</code> にキャッシュします。起動時はまずキャッシュで公開し、親機から取り直して新しい機器があれば追加します。
+取得に失敗したら 5 分ごとに再試行します。</p>
+
+<h3>HAP 上の識別子</h3>
+<p>1 台目の玄関子機は従来どおり <code>accessory.name</code> / <code>username</code> / <code>port</code> をそのまま使うので、既に Home に追加済みのアクセサリは影響を受けません。
+それ以外の機器は MAC アドレス（<code>username</code>）とポートにオフセットを足します。名前は親機の登録名を使い、HomeKit が許さない記号は空白に置き換えます。</p>
+<table>
+  <thead><tr><th>機器</th><th>オフセット</th><th>username（既定値の場合）</th><th>ポート（既定値の場合）</th></tr></thead>
+  <tbody>
+    <tr><td>玄関子機 1（door0）</td><td>—</td><td><code>DC:D0:0F:00:00:01</code></td><td>47129</td></tr>
+    <tr><td>玄関子機 n（door<i>n</i>）</td><td>+<i>n</i></td><td><code>…:00:02</code>, <code>…:00:03</code></td><td>47130, 47131</td></tr>
+    <tr><td>カメラ n（camera<i>n</i>）</td><td>+0x10+<i>n</i></td><td><code>…:00:11</code> 〜 <code>…:00:14</code></td><td>47145 〜 47148</td></tr>
+  </tbody>
+</table>
+
+<h3>セッションの受け渡し</h3>
+<p>同じ clientId で 2 本のセッションを張ると、親機は両方を交互に切断します。そこで「後から開いたカメラが勝つ」方式で排他します。</p>
+
+<figure class="diagram">
+  <img src="img/camera-switch.svg" alt="玄関子機の視聴中にカメラ1 を開いたときのタイムライン。door0 が切断されてから camera0 が接続する。">
+  <figcaption>図 4. カメラ切り替え。各 source の <code>beforeStart</code> が、他の source の <code>preempt()</code> を待ってから接続を始めます。</figcaption>
+</figure>
+
+<p><code>preempt()</code> は <code>preempted</code> イベントを出し（<code>StreamingDelegate</code> がそれを受けて HomeKit の <code>forceStopStreamingSession()</code> を呼ぶ）、
+利用者を空にして <code>Request_Disconnect</code> を送り、約 1 秒待ってから戻ります。録画機能から見たライブ中かどうかの判定
+（<code>isLiveActive</code>）も、全カメラの source を見るようになっています。</p>
+
+<!-- ============================================================ -->
+<h2 id="streaming">7. HomeKit 配信（streaming.js）</h2>
+
+<p>HAP-NodeJS の <code>CameraController</code> に渡す <code>StreamingDelegate</code> が、HomeKit からの要求に応じて ffmpeg を起動します。
+同時ストリーム数は 1 です（<code>cameraStreamCount: 1</code>）。</p>
+
+<figure class="diagram">
+  <img src="img/media-pipeline.svg" alt="映像、スナップショット、音声の 3 つの処理経路を示す図。">
+  <figcaption>図 5. 映像・スナップショット・音声の処理段。</figcaption>
+</figure>
+
+<p>HomeKit とのやり取りは次の 3 段階です。</p>
+<ol>
+  <li><code>prepareStream</code>：SRTP の鍵とソルト、SSRC、戻りポートを生成して返します。</li>
+  <li><code>handleStreamRequest(start)</code>：ffmpeg を映像用・音声用に 1 本ずつ起動し、source を <code>acquire()</code> して消費者として登録します。</li>
+  <li><code>handleStreamRequest(stop)</code>：ffmpeg を止めて <code>release()</code> します。<code>reconfigure</code>（ビットレート変更の要求）は無視します。
+    要求ごとに ffmpeg を作り直すと、約 27 秒で映像が止まっていたためです。</li>
+</ol>
+
+<h3 id="streaming-video">映像</h3>
+<pre><code>ffmpeg -f h264 -use_wallclock_as_timestamps 1 -fflags +genpts -i pipe:0 \
+       -an -c:v copy -payload_type &lt;pt&gt; -ssrc &lt;ssrc&gt; -f rtp \
+       -srtp_out_suite AES_CM_128_HMAC_SHA1_80 -srtp_out_params &lt;key+salt&gt; \
+       "srtp://&lt;iPhone&gt;:&lt;port&gt;?rtcpport=&lt;port&gt;&amp;pkt_size=1316"</code></pre>
+<p>親機の H264（Baseline、1280×720）は<strong>再エンコードせず</strong> SRTP に詰め直すだけです。libx264 で再エンコードすると iPhone 側のデコーダが同期を外し続けました。
+HomeKit が要求する解像度やビットレート（例: 299 kbps）は無視しますが、実用上問題はありません。</p>
+
+<h3 id="streaming-audio">音声</h3>
+<p>親機の音声は 8 kHz の PCMU、HomeKit が受け付けるのは Opus です。次の順に変換します。</p>
+<ol>
+  <li><strong>AudioPacer</strong>：届いた PCMU を FIFO にため、壁時計に合わせて 20 ms ごとに 160 バイトずつ ffmpeg に書きます。
+    親機は無音区間でパケットを止める（VAD）ので、足りない分は無音（0xFF）で埋め、受信側のジッタバッファを枯らしません。</li>
+  <li><strong>ffmpeg</strong>：<code>-f mulaw -ar 8000</code> を libopus（16 kHz、20 ms フレーム）に変換し、<strong>暗号化しない</strong> RTP でループバックの UDP に出します。</li>
+  <li><strong>AudioProxy</strong>：RTP タイムスタンプを書き換えてから <code>srtp.js</code> で暗号化し、iPhone に送ります。</li>
+</ol>
+<div class="callout warn">
+  <strong>Opus のタイムスタンプ</strong>
+  <p>RFC 7587 では Opus の RTP タイムスタンプは常に 48 kHz 刻み（20 ms で +960）ですが、HomeKit は交渉したサンプルレートの刻み（16 kHz なら +320）を期待します。
+  そのままだと 20 ms のパケットを 60 ms 分と解釈し、間に 40 ms の無音が入って音が途切れます。ffmpeg では直せないため、自前で SRTP を実装しています
+  （go2rtc の <code>repackToHAP20</code> と同じ考え方）。</p>
+</div>
+
+<h3 id="streaming-snapshot">スナップショット</h3>
+<p>Home のタイル表示用の静止画は、source が覚えている最後のキーフレーム（SPS + PPS + IDR）を ffmpeg で JPEG にして返します。
+同じ解像度の要求は 5 秒キャッシュします。キーフレームが無い（まだ一度もライブを見ていない）ときは 1×1 の灰色 JPEG を返します。</p>
+<p>玄関子機の IDR は約 150 KB あり、RTP 約 150 パケットに分割されて届きます。<code>H264Depay</code> は FU-A の途中で RTP シーケンス番号が飛んだら
+NAL に <code>damaged</code> の印を付け、source はその IDR をキャッシュしません。欠けた IDR は下半分が崩れた画像になり、次にライブを見るまで残ってしまうためです。</p>
+
+<!-- ============================================================ -->
+<h2 id="records">8. 録画（BaseRpc / RecordService）</h2>
+
+<p><code>BaseRpc</code> は <code>Request_Connect</code> を送らない WebRTC セッションです。映像は流れませんが、DataChannel で Protobuf のコマンドをやり取りできます。
+メッセージは <code>proto/gen/webrtc_if.proto</code> を protobufjs で実行時に読み込んで組み立てます。</p>
+<ul>
+  <li><code>request(cmd, body)</code> は <code>request_id</code> を採番して送り、同じ ID の <code>response*</code> が来たら解決します。ID が一致しない通知は <code>notify</code> イベントになります。</li>
+  <li><strong>nudge</strong>：親機の SCTP は、こちらが次に何か送るまで応答を出さないことがあります（大きな GetFile の応答で顕著）。
+    そこで応答待ちの間、同じメッセージを 1.5 秒ごとに再送します。重複した応答は捨てられます。</li>
+</ul>
+
+<p><code>RecordService</code> は録画機能の窓口です。</p>
+<ul>
+  <li>操作はすべて直列化し、最初に <code>Request_GetRecordControl</code> で録画の操作権を取ります。最後の操作から 20 秒で操作権を返して切断します。</li>
+  <li>一覧は <code>Request_GetRecordList</code>、ファイルは <code>Request_GetFile</code>（64 KB ずつ）で取得します。録画は普通の MP4（H264 + AAC 16 kHz）です。</li>
+  <li>親機の AAC には規格外のフレームが混じっていて Chrome が再生を止めるため、映像はコピーし音声だけ ffmpeg で再エンコードしてからキャッシュします（上限 500 MB、古い順に削除）。</li>
+  <li>ライブ視聴中は <code>LiveBusyError</code> を返して親機を譲ります。ライブ開始時には <code>suspend()</code> でセッションを即座に解放します。</li>
+  <li>GetFile がタイムアウトしたら、親機が古いチャンクを送り続けて次の要求を壊すのを防ぐため、セッションを張り直します。</li>
+  <li><code>unitState()</code> は <code>Request_GetState</code> を送り、機器一覧の取得に使われます。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="nas">9. NAS バックアップ（nas-sync.js）</h2>
+
+<p>録画を一定間隔（既定 60 分）で SMB 共有にコピーします。マウントせず <code>smbclient</code> を使うので、root 権限は要りません。</p>
+<ul>
+  <li>設定は <code>/etc/doorphone-hap/nas.json</code> に分けて置き、Web UI から編集します。実行のたびに読み直すので再起動は要りません。</li>
+  <li>保存先は strftime 形式のテンプレート（既定 <code>%Y%m%d/%H%M%S</code>、拡張子は自動）。ディレクトリは 1 階層ずつ <code>mkdir</code> します。</li>
+  <li>パスワードは 0600 の一時ファイルで <code>smbclient -A</code> に渡し、プロセス一覧に出ないようにします。</li>
+  <li>アップロード済みの録画は <code>nas-state.json</code> に記録し、二重に送りません。初回は既定で 7 日前まで遡ります。</li>
+  <li>読めない録画（SD の不良ブロックと思われる）は 3 回失敗したら以後スキップし、全体を止めません。</li>
+  <li>自動削除を有効にすると、自分がアップロードしたファイルのうち指定日数を過ぎたものだけを消します。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="pairing">10. ペアリング（pair.js）</h2>
+
+<p>新しい「スマホ」として親機に登録し、クライアント証明書を発行してもらいます。CLI（<code>doorphone-hap pair</code>）と Web UI の両方から呼ばれます。</p>
+
+<figure class="diagram">
+  <img src="img/pairing-sequence.svg" alt="QR コードから /reg、CSR 生成、KVS 経由の Request_Pairing、証明書の受け取りまでのシーケンス図。">
+  <figcaption>図 6. ペアリングのシーケンス。</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><strong>QR の読み取り</strong>：画像を jsQR で読みます（HEIC は macOS の <code>sips</code> で変換。RPi では JPEG / PNG を使う）。ブラウザから使う場合は Web UI 側でも先に読み取りを試みます。スマホ写真は大きいので、数種類の縮小・中央切り出しを順に試します。</li>
+  <li><strong>クラウド登録</strong>：URL 末尾のトークンを HMAC-SHA256 で署名して <code>x-auth-hash</code> ヘッダに入れ、<code>GET /reg/&lt;token&gt;</code> します。
+    HMAC 鍵はアプリに埋め込まれた固定値ですが、リポジトリには含めず <code>/etc/doorphone-hap/hmac.key</code> から読みます（取り出し方は <a href="analysis.html#step2">解析方法</a>）。</li>
+  <li><strong>鍵と CSR</strong>：EC P-256 の鍵ペアを作り、CSR を PEM で作ります。Subject はアプリと同じく、区切り無しで連結した 1 つの CN
+    （<code>CN=IoT ApplicationOU=Organizational UnitO=OrganizationC=Country</code>）です。</li>
+  <li><strong>親機への登録</strong>：clientId を <code>&lt;PeerIdPrefix&gt;-&lt;mobileDeviceId&gt;</code> にして KVS に接続し、<code>Request_Pairing</code> を送ります。
+    <code>csr</code> と <code>client_cert</code> は proto 上 <code>string</code> 型で、中身は <strong>PEM</strong> です（DER を送ると親機は黙って捨てます）。</li>
+  <li><strong>保存</strong>：<code>Notify_AnswerPairing</code> の証明書を <code>cert.pem</code>、秘密鍵を <code>privkey.pem</code>、
+    <code>unitDeviceId</code> と <code>mobileDeviceId</code> などを <code>unit.json</code> に書きます。</li>
+</ol>
+<p>トークンは 1 回しか使えないので、QR を読んでから登録完了までを 1 つの処理で一気に行います（全体のタイムアウトは 120 秒）。
+親機の応答が遅いときは <code>Request_Pairing</code> を再送しますが、送りすぎると親機が 1 回目を中断する（<code>REASON_INTERRUPT</code>）ので回数を絞っています。</p>
+
+<!-- ============================================================ -->
+<h2 id="webui">11. Web UI と API（pair-web.js, web/）</h2>
+
+<p>Web UI は Vue 3 の SFC（<code>App.vue</code>、<code>Records.vue</code>、<code>Nas.vue</code>）を <code>vue3-sfc-loader</code> でブラウザ側でコンパイルして表示します。ビルド工程はありません。
+タブは「録画」「NAS」「状態」の 3 つで、ペアリング前は「状態」だけが使えます。</p>
+
+<table>
+  <thead><tr><th>メソッド</th><th>パス</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td>GET</td><td><code>/api/state</code></td><td>ペアリング状態、カメラごとの HomeKit 登録状況・セットアップ QR（SVG）・URI。</td></tr>
+    <tr><td>GET</td><td><code>/api/events</code></td><td>Server-Sent Events。状態が変わるたび（HomeKit のペアリング、証明書ファイルの変更など）に <code>/api/state</code> と同じ内容を送る。</td></tr>
+    <tr><td>POST</td><td><code>/api/pair</code></td><td>QR 画像（multipart）または URL でペアリングを実行し、ログを返す。成功後にプロセスを再起動する。</td></tr>
+    <tr><td>GET</td><td><code>/api/records</code></td><td>録画一覧（<code>offset</code> / <code>limit</code>）。</td></tr>
+    <tr><td>GET</td><td><code>/api/records/head</code></td><td>最後に確認した最新録画。親機には接続しないので、ポーリング用。</td></tr>
+    <tr><td>GET</td><td><code>/api/records/thumb/&lt;id&gt;</code><br><code>/api/records/video/&lt;id&gt;</code></td><td>サムネイル JPEG / MP4。Range リクエストに対応（Safari での再生に必要）。一覧に出た ID しか受け付けない。</td></tr>
+    <tr><td>GET / POST</td><td><code>/api/nas</code></td><td>NAS 設定と同期状態の取得 / 設定の保存。</td></tr>
+    <tr><td>POST</td><td><code>/api/nas/sync</code></td><td>今すぐ同期する。</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="config">12. 設定とファイル</h2>
+
+<h3>config.json</h3>
+<table>
+  <thead><tr><th>キー</th><th>既定値</th><th>説明</th></tr></thead>
+  <tbody>
+    <tr><td><code>accessory.name</code></td><td><code>Doorphone</code></td><td>玄関子機 1 のアクセサリ名。</td></tr>
+    <tr><td><code>accessory.username</code></td><td><code>DC:D0:0F:00:00:01</code></td><td>HAP の識別子（MAC 形式）。他のカメラはこれにオフセットを足す。</td></tr>
+    <tr><td><code>accessory.pincode</code></td><td><code>031-45-154</code></td><td>セットアップコード（全カメラ共通）。</td></tr>
+    <tr><td><code>accessory.port</code></td><td><code>47129</code></td><td>HAP の TCP ポート。他のカメラはこれにオフセットを足す。</td></tr>
+    <tr><td><code>doorphone.*Path</code></td><td><code>/etc/doorphone-hap/…</code></td><td>クレデンシャル、証明書、秘密鍵、<code>unit.json</code> の場所。</td></tr>
+    <tr><td><code>ffmpeg.path</code></td><td><code>ffmpeg</code></td><td>ffmpeg のパス。</td></tr>
+    <tr><td><code>storage.persistPath</code></td><td><code>/var/lib/doorphone-hap/persist</code></td><td>HAP のペアリング情報。親ディレクトリに録画キャッシュや <code>devices.json</code> も置く。</td></tr>
+    <tr><td><code>storage.nasConfigPath</code></td><td><code>/etc/doorphone-hap/nas.json</code></td><td>NAS 設定。</td></tr>
+    <tr><td><code>web.host</code> / <code>web.port</code></td><td><code>0.0.0.0</code> / <code>8080</code></td><td>Web UI。<code>web.enabled: false</code> で無効化。</td></tr>
+  </tbody>
+</table>
+<p><code>ACC_NAME</code>、<code>ACC_MAC</code>、<code>ACC_PIN</code>、<code>ACC_PORT</code>、<code>WEB_PORT</code> などの環境変数で個別に上書きもできます。</p>
+
+<h3>実行時のファイル</h3>
+<table>
+  <thead><tr><th>パス</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td><code>/etc/doorphone-hap/cert.pem</code>, <code>privkey.pem</code></td><td>親機が発行したクライアント証明書と秘密鍵（有効期限 50 年）。</td></tr>
+    <tr><td><code>/etc/doorphone-hap/unit.json</code></td><td><code>unitDeviceId</code>、<code>mobileDeviceId</code>、ペアリング日時など。</td></tr>
+    <tr><td><code>/etc/doorphone-hap/kvs_creds.json</code></td><td>AWS 一時クレデンシャルと <code>channelName</code>。約 10 分ごとに書き換わる。</td></tr>
+    <tr><td><code>/etc/doorphone-hap/hmac.key</code></td><td>ペアリング用の HMAC 鍵（利用者が用意する）。</td></tr>
+    <tr><td><code>/var/lib/doorphone-hap/persist/</code></td><td>HAP-NodeJS のペアリング情報（iPhone 側の公開鍵など）。</td></tr>
+    <tr><td><code>/var/lib/doorphone-hap/devices.json</code></td><td>親機から取得した機器一覧のキャッシュ。</td></tr>
+    <tr><td><code>/var/lib/doorphone-hap/records/</code></td><td>録画のサムネイル・動画キャッシュと <code>nas-state.json</code>。</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="packaging">13. パッケージと運用</h2>
+
+<ul>
+  <li><code>make deb</code> で、linux/arm64 のコンテナ（Apple <code>container</code> / Docker / Podman を自動選択）の中で <code>npm install</code> し、
+    ネイティブモジュール込みの <code>doorphone-hap_&lt;ver&gt;_arm64.deb</code> を作ります。バージョンは <code>packaging/deb/DEBIAN/control</code> の <code>Version</code> だけで管理します。</li>
+  <li>インストール先は <code>/opt/doorphone-hap</code>。<code>postinst</code> がサービス用ユーザー <code>doorphone-hap</code> を作り、<code>/etc</code> と <code>/var/lib</code> の権限を整えてサービスを有効化します。</li>
+  <li>systemd ユニットは <code>ProtectSystem=strict</code> などで書き込み先を <code>/etc/doorphone-hap</code> と <code>/var/lib/doorphone-hap</code> に限定しています。</li>
+  <li>ログは <code>journalctl -u doorphone-hap -f</code> で見られます。<code>[source camera0]</code> のように、カメラごとに接頭辞が付きます。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="pitfalls">14. 実装上の注意点</h2>
+
+<p>実装中に実際にはまった点です。コードを変えるときに同じ問題を踏まないよう、まとめておきます。</p>
+<table>
+  <thead><tr><th>項目</th><th>守ること</th></tr></thead>
+  <tbody>
+    <tr><td>KVS の clientId</td><td>ライブも録画も <code>unit.json</code> の <code>mobileDeviceId</code> を使う。違うと接続はできても映像が来ない。</td></tr>
+    <tr><td>同時セッション</td><td>同じ clientId で 2 本張らない。親機は両方を交互に切断する。</td></tr>
+    <tr><td>DataChannel</td><td>コマンドは自分で作った DC に送る。<code>onOpen</code> を待たない（親機は DCEP ACK を返さない）。</td></tr>
+    <tr><td>Request_Connect</td><td><code>version = VERSION_1</code> を必ず入れる。玄関子機は <code>DEVICE_DOOR</code>、増設カメラは <code>DEVICE_CAMERA</code>。</td></tr>
+    <tr><td>SDP</td><td>音声 sendrecv + 映像 recvonly の、アプリと同じ形の offer にする。</td></tr>
+    <tr><td>node-datachannel</td><td>コールバックはトラック追加の前に登録する。<code>requestKeyframe()</code> は <code>isOpen()</code> を確認してから呼ぶ。</td></tr>
+    <tr><td>DC の応答待ち</td><td>親機への要求には nudge（同じ要求の再送）を付ける。</td></tr>
+    <tr><td>映像</td><td>ffmpeg は <code>-c:v copy</code>。再エンコードしない。</td></tr>
+    <tr><td>音声</td><td>Opus の RTP タイムスタンプは交渉したサンプルレート刻みに書き換える。</td></tr>
+    <tr><td>HomeKit の reconfigure</td><td>ffmpeg を作り直さずに無視する。</td></tr>
+    <tr><td>ペアリングの proto</td><td><code>csr</code> / <code>client_cert</code> は PEM 文字列。Java の getter の型（String / ByteString）で string / bytes を判断する。</td></tr>
+    <tr><td>セッションの保持</td><td>使い終わったら <code>Request_Disconnect</code> を送って閉じる。張りっぱなしにすると親機のモニターが使えない。</td></tr>
+  </tbody>
+</table>
+
+<footer class="page">doorphone-hap — <a href="index.html">ドキュメント目次</a> · <a href="analysis.html">ドアホンの解析方法</a></footer>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 330" role="img" aria-labelledby="title desc">
+  <title id="title">TLS 中間者化で外す 3 つの防御</title>
+  <desc id="desc">PAIRIP、独自 HTTPS クライアントの CA ピン止め、OS 標準 HTTP クライアントの信頼ストア。それぞれの症状と対処。</desc>
+  <style>
+    text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+    .t { font-size: 14px; font-weight: 600; }
+    .s { font-size: 12px; fill: #59636e; }
+    .m { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; fill: #59636e; }
+    .h { font-size: 12.5px; font-weight: 700; fill: #59636e; }
+    .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+    .red { fill: #ffebe9; stroke: #ff8182; }
+    .green { fill: #dafbe1; stroke: #4ac26b; }
+    .blue { fill: #ddf4ff; stroke: #54aeff; }
+    .ar { stroke: #59636e; stroke-width: 1.5; fill: none; }
+    .ah { fill: #59636e; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #e6edf3; }
+      .s, .m, .h { fill: #9198a1; }
+      .bx { fill: #151b23; stroke: #656c76; }
+      .red { fill: #2c1517; stroke: #da3633; }
+      .green { fill: #12261e; stroke: #2ea043; }
+      .blue { fill: #121d2f; stroke: #1f6feb; }
+      .ar { stroke: #9198a1; }
+      .ah { fill: #9198a1; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+    </marker>
+  </defs>
+
+  <text class="h" x="20" y="28">防御（そのままだと）</text>
+  <text class="h" x="420" y="28">対処（パッチ）</text>
+  <text class="h" x="800" y="28">結果</text>
+
+  <!-- Row 1 -->
+  <rect class="bx red" x="20" y="42" width="360" height="76" rx="8"/>
+  <text class="t" x="36" y="66">① PAIRIP（Play のライセンス確認）</text>
+  <text class="s" x="36" y="88">Play ストア以外から入れると起動時に</text>
+  <text class="s" x="36" y="106">エラーダイアログで止まる</text>
+  <rect class="bx green" x="420" y="42" width="340" height="76" rx="8"/>
+  <text class="t" x="436" y="66">manifest の application 名を戻す</text>
+  <text class="m" x="436" y="88">com.pairip.application.Application</text>
+  <text class="m" x="436" y="106">→ com.panasonic.newpf.MyApplication</text>
+  <line class="ar" x1="380" y1="80" x2="416" y2="80" marker-end="url(#a)"/>
+
+  <!-- Row 2 -->
+  <rect class="bx red" x="20" y="138" width="360" height="76" rx="8"/>
+  <text class="t" x="36" y="162">② 独自 HTTPS クライアントの CA 固定</text>
+  <text class="s" x="36" y="184">res/raw の Amazon Root CA だけを信頼し</text>
+  <text class="s" x="36" y="202">mitmproxy の証明書を拒否</text>
+  <rect class="bx green" x="420" y="138" width="340" height="76" rx="8"/>
+  <text class="t" x="436" y="162">raw の CA ファイルを差し替え</text>
+  <text class="m" x="436" y="184">res/raw/amazon_root_ca_1.pem</text>
+  <text class="s" x="436" y="202">← mitmproxy の CA 証明書で上書き</text>
+  <line class="ar" x1="380" y1="176" x2="416" y2="176" marker-end="url(#a)"/>
+
+  <!-- Row 3 -->
+  <rect class="bx red" x="20" y="234" width="360" height="76" rx="8"/>
+  <text class="t" x="36" y="258">③ OS 標準 HTTP クライアント</text>
+  <text class="s" x="36" y="280">Android 7 以降はユーザー追加の CA を</text>
+  <text class="s" x="36" y="298">アプリが信頼しない</text>
+  <rect class="bx green" x="420" y="234" width="340" height="76" rx="8"/>
+  <text class="t" x="436" y="258">Network Security Config を追加</text>
+  <text class="s" x="436" y="280">trust-anchors に system / user /</text>
+  <text class="m" x="436" y="298">@raw/amazon_root_ca_1</text>
+  <line class="ar" x1="380" y1="272" x2="416" y2="272" marker-end="url(#a)"/>
+
+  <!-- Result -->
+  <rect class="bx blue" x="800" y="42" width="160" height="268" rx="8"/>
+  <text class="t" x="816" y="70">mitmproxy で</text>
+  <text class="t" x="816" y="90">HTTPS を復号</text>
+  <text class="s" x="816" y="122">3 つを同時に</text>
+  <text class="s" x="816" y="140">当てないと、</text>
+  <text class="s" x="816" y="158">どれか 1 経路で</text>
+  <text class="s" x="816" y="176">必ず TLS が失敗</text>
+  <text class="s" x="816" y="214">副作用:</text>
+  <text class="s" x="816" y="232">再署名で Firebase</text>
+  <text class="s" x="816" y="250">（プッシュ通知）が</text>
+  <text class="s" x="816" y="268">使えなくなる</text>
+  <line class="ar" x1="760" y1="80" x2="796" y2="80" marker-end="url(#a)"/>
+  <line class="ar" x1="760" y1="176" x2="796" y2="176" marker-end="url(#a)"/>
+  <line class="ar" x1="760" y1="272" x2="796" y2="272" marker-end="url(#a)"/>
+</svg>

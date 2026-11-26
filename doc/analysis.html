@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ドアホンの解析方法 — doorphone-hap</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc" aria-label="目次">
+  <a class="home" href="index.html">← doorphone-hap ドキュメント</a>
+  <ol>
+    <li><a href="#notice">はじめに</a></li>
+    <li><a href="#flow">全体の流れ</a></li>
+    <li><a href="#tools">使った道具</a></li>
+    <li><a href="#step1">STEP 1 APK の入手</a></li>
+    <li><a href="#step2">STEP 2 静的解析</a>
+      <ol>
+        <li><a href="#step2-arch">アプリの構造</a></li>
+        <li><a href="#step2-where">読むべき場所</a></li>
+        <li><a href="#step2-proto">Protobuf の復元</a></li>
+      </ol>
+    </li>
+    <li><a href="#step3">STEP 3 PAIRIP の回避</a></li>
+    <li><a href="#step4">STEP 4 TLS の中間者化</a></li>
+    <li><a href="#step5">STEP 5 実機でペアリング</a></li>
+    <li><a href="#step6">STEP 6 クレデンシャル経路</a></li>
+    <li><a href="#step7">STEP 7 WebRTC 視聴</a></li>
+    <li><a href="#step8">STEP 8 HomeKit 化</a></li>
+    <li><a href="#later">追加機能の解析</a></li>
+    <li><a href="#debug">デバッグの進め方</a></li>
+    <li><a href="#facts">判明した事実の一覧</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="page">
+  <p class="kicker">doorphone-hap ドキュメント</p>
+  <h1>ドアホンの解析方法</h1>
+  <p class="lead">純正アプリ「ドアホンコネクト S」（Android 版）を手がかりに、VL-X70AH 親機との通信プロトコルをどう調べたかを、
+  実際に進めた順に説明します。調べた結果をどう実装したかは <a href="code.html">コードの詳細な説明</a> を参照してください。</p>
+</header>
+
+<!-- ============================================================ -->
+<h2 id="notice">はじめに</h2>
+
+<div class="callout warn">
+  <strong>前提と注意</strong>
+  <ul>
+    <li>対象は<strong>自分が所有する親機</strong>との相互運用です。他人の親機やアカウントに対して行ってはいけません。</li>
+    <li>アプリの逆コンパイルや改変は、サービス利用規約に抵触する可能性があります。自己責任で行ってください。</li>
+    <li>アプリに埋め込まれた鍵（HMAC 鍵など）や、ペアリングで得た証明書・秘密鍵・ID は公開しないでください。
+      このドキュメントにも具体的な値は載せていません。<code>.gitignore</code> で <code>extracted-state/</code> や <code>*.pem</code>、
+      逆コンパイル結果（<code>research/jadx-src/</code> など）を除外しています。</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="flow">全体の流れ</h2>
+
+<p>大きく「アプリ側を観測できる状態にする」段階（STEP 1〜4）と、「観測結果をもとに Node.js で再実装する」段階（STEP 5〜8）に分かれます。</p>
+
+<figure class="diagram">
+  <img src="img/analysis-roadmap.svg" alt="解析の 8 段階。APK の入手、静的解析、PAIRIP の回避、TLS の中間者化、実機でペアリング、クレデンシャル経路、WebRTC 視聴、HomeKit 化。">
+  <figcaption>図 1. 解析の流れ。上段で通信を「見える」ようにし、下段で 1 つずつ再現していきました。</figcaption>
+</figure>
+
+<p>基本的な進め方は、<strong>静的解析で仮説を立て、実機（親機）で 1 つずつ確かめる</strong>ことの繰り返しです。
+アプリのコードだけでは親機側の振る舞い（どの SDP なら映像を送るか、どのフィールドが必須かなど）は分からないので、
+最終的には小さな検証スクリプトを親機に当てて確認しました。</p>
+
+<!-- ============================================================ -->
+<h2 id="tools">使った道具</h2>
+
+<table>
+  <thead><tr><th>道具</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>apkeep</code> / <code>adb pull</code></td><td>APK の入手。</td></tr>
+    <tr><td><code>jadx</code></td><td>APK を Java ソースに逆コンパイル。読むのはほぼこちら。</td></tr>
+    <tr><td><code>apktool</code> / <code>zipalign</code> / <code>apksigner</code></td><td>manifest やリソースの改変と再パッケージ・再署名。</td></tr>
+    <tr><td>Android Emulator（AVD）</td><td>改変したアプリを動かす。<code>-writable-system</code> と <code>adb root</code> でアプリのデータ領域を読める。</td></tr>
+    <tr><td><code>mitmproxy</code></td><td>アプリの HTTPS 通信を復号して記録。</td></tr>
+    <tr><td><code>pyjks</code></td><td>アプリのキーストア（BKS）から証明書と秘密鍵を取り出す。</td></tr>
+    <tr><td><code>zbar</code> / jsQR</td><td>親機の QR コードを写真からデコード。</td></tr>
+    <tr><td>Python（<code>awscrt</code>, <code>aiortc</code>）</td><td>初期の検証用。MQTT は成功、WebRTC は不採用。</td></tr>
+    <tr><td>Node.js（<code>node-datachannel</code>, AWS SDK）</td><td>最終的な実装と、親機に当てる検証スクリプト。</td></tr>
+    <tr><td><code>ffmpeg</code> / <code>ffprobe</code></td><td>受信した H264 の確認、フレームの書き出し。</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="step1">STEP 1 APK の入手</h2>
+
+<p>Play ストアからインストール済みの端末があれば <code>adb</code> で取り出すのが簡単です。無ければ <code>apkeep</code> で Play ストアから直接ダウンロードします。
+どちらも split APK（本体・ABI・言語・解像度別）が複数ファイルで得られます。</p>
+<pre><code># 端末から取り出す
+adb shell pm path com.panasonic.doorphoneconnects
+adb pull &lt;表示されたパス&gt; ./apks/
+
+# apkeep で取得する（Google アカウントの aas_token が必要）
+apkeep -a com.panasonic.doorphoneconnects ./apks/</code></pre>
+<p><code>aas_token</code> の入手方法と扱いは <code>research/extract-hmac-key.md</code> にまとめてあります。Google アカウントへの長期アクセス権に相当するので、絶対にコミットしないでください。</p>
+
+<!-- ============================================================ -->
+<h2 id="step2">STEP 2 静的解析</h2>
+
+<pre><code>jadx apks/com.panasonic.doorphoneconnects.apk -d research/jadx-src
+apktool d -f -s -o research/apktool-out apks/com.panasonic.doorphoneconnects.apk</code></pre>
+
+<h3 id="step2-arch">アプリの構造</h3>
+<ul>
+  <li><strong>WebView ベースのハイブリッドアプリ</strong>です。画面は assets 内の HTML / JavaScript で、通信は Kotlin 側（パッケージ <code>com.panasonic.newpf</code>）が担当します。ネイティブライブラリ（.so）は使っていません。</li>
+  <li>画面と Kotlin の間は <code>door_phone</code> という JavaScriptInterface でつながっていて、メソッドは <code>nativeCall(json)</code> と <code>setCallBackFunc(json)</code> だけです。
+    画面側は JSON でコマンドを組み立て、Kotlin 側がそれを Protobuf に変換して親機に送ります（<code>ScriptDataInterface.java</code>）。</li>
+  <li>親機との通信は 2 層です。アプリ層は Protobuf の <code>webrtc_if.WebRtcMessage</code>、トランスポートは AWS Kinesis Video Streams の WebRTC です。</li>
+</ul>
+
+<h3 id="step2-where">読むべき場所</h3>
+<table>
+  <thead><tr><th>場所（jadx の出力）</th><th>分かること</th></tr></thead>
+  <tbody>
+    <tr><td><code>com/panasonic/newpf/unit/PairingManager.java</code></td><td>ペアリングの手順。<code>/reg/&lt;token&gt;</code> への GET と、<code>x-auth-hash</code> ヘッダの HMAC-SHA256 計算。鍵は <code>Base64.decode("…")</code> の引数としてハードコードされている。</td></tr>
+    <tr><td><code>webrtc_if/</code> 以下（<code>WebrtcIf.java</code>, <code>call/Call.java</code> ほか）</td><td>protobuf-java の生成コード。メッセージ定義を丸ごと復元できる（次節）。</td></tr>
+    <tr><td><code>com/panasonic/newpf/remote/request/RequestManager.java</code></td><td>どのコマンドをどの順で送るか。<code>Request_Connect</code> の組み立てなど。</td></tr>
+    <tr><td><code>com/panasonic/newpf/external/manager/</code></td><td>AWS IoT の MQTT。トピック <code>doorphone/comm/&lt;unitId&gt;</code> とコマンド名（<code>GET_SIGNALING_CHANNEL</code> など）。</td></tr>
+    <tr><td>KVS 関連（<code>com/amazonaws/services/kinesisvideo*</code> と呼び出し側）</td><td>VIEWER ロールでの接続、<code>GetIceServerConfig</code> の ClientId など。</td></tr>
+    <tr><td>デモ用ユニットの実装（<code>p132q4/g.java</code> など）</td><td>親機なしで UI を動かすための模擬応答。<code>devno</code> が 0 始まりであることなど、親機の応答の形が分かる。</td></tr>
+  </tbody>
+</table>
+<p>HMAC 鍵の探し方は <code>research/extract-hmac-key.md</code> に詳しく書いてあります。見つけた値は <code>/etc/doorphone-hap/hmac.key</code> に 1 行で保存します。</p>
+
+<p>この段階で分かったクラウド側のエンドポイントは次のとおりです。</p>
+<table>
+  <thead><tr><th>ホスト</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>intercom.iot-webrtc.net</code></td><td>ペアリング登録（<code>/reg/&lt;token&gt;</code>）、バージョン情報など。</td></tr>
+    <tr><td><code>intercom-auth.iot-webrtc.net</code></td><td>認証・通知関連。</td></tr>
+    <tr><td><code>kinesisvideo.ap-northeast-1.amazonaws.com</code></td><td>KVS WebRTC のシグナリング（東京リージョン）。</td></tr>
+    <tr><td><code>&lt;prefix&gt;-ats.iot.ap-northeast-1.amazonaws.com:8883</code></td><td>AWS IoT Core の MQTT（mTLS）。</td></tr>
+  </tbody>
+</table>
+
+<h3 id="step2-proto">Protobuf の復元</h3>
+<p>最初は Java のアクセサを読みながら <code>.proto</code> を手で書き起こしましたが、型の取り違え（<code>string</code> と <code>bytes</code>）で親機に黙って無視される失敗がありました。
+protobuf-java の生成クラスには、<code>.proto</code> をコンパイルした記述子（<code>FileDescriptorProto</code>）がそのまま文字列として埋め込まれているので、
+それを取り出せば元の定義を正確に復元できます。</p>
+
+<figure class="diagram">
+  <img src="img/proto-extraction.svg" alt="jadx の出力から記述子の文字列を取り出し、FileDescriptorProto としてデコードし、.proto ソースに戻す流れ。">
+  <figcaption>図 2. <code>research/extract_proto.js</code> による復元。生成された <code>proto/gen/</code> を実装でもそのまま使っています。</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="step3">STEP 3 PAIRIP の回避</h2>
+
+<p>このアプリは Google Play の <strong>PAIRIP</strong>（Play Integrity によるライセンス確認）で包まれていて、Play ストア以外からインストールすると
+起動時にライセンスエラーのダイアログで止まります。検査は <code>com.pairip.application.Application</code> が <code>attachBaseContext</code> で行っているので、
+manifest の <code>application</code> 要素の <code>android:name</code> を本来の Application クラスに戻せば、検査が実行経路から外れます。</p>
+<pre><code>apktool d -f -s -o apktool-out apks/com.panasonic.doorphoneconnects.apk
+sed -i '' 's/com\.pairip\.application\.Application/com.panasonic.newpf.MyApplication/' \
+    apktool-out/AndroidManifest.xml
+apktool b apktool-out -o apks/base-patched.apk
+zipalign -p -f 4 apks/base-patched.apk apks/base-aligned.apk
+# split APK もすべて同じ鍵で署名し直す
+for f in apks/base-aligned.apk apks/split_*.apk; do
+  apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android "$f"
+done
+adb install-multiple -r apks/base-aligned.apk apks/split_*.apk</code></pre>
+<p>manifest に <code>com.pairip.licensecheck.LicenseContentProvider</code> が登録されているアプリでは、それも削除する必要があります（このアプリには無し）。</p>
+
+<!-- ============================================================ -->
+<h2 id="step4">STEP 4 TLS の中間者化</h2>
+
+<p>アプリの HTTPS 通信を mitmproxy で読むには、3 つの防御を<strong>同時に</strong>外す必要があります。1 つずつ試すと、どれか別の経路で必ず TLS が失敗します。</p>
+
+<figure class="diagram">
+  <img src="img/mitm-layers.svg" alt="PAIRIP、独自 HTTPS クライアントの CA 固定、OS 標準 HTTP クライアントの信頼ストア、の 3 つの防御とそれぞれの対処。">
+  <figcaption>図 3. TLS 中間者化のために当てるパッチ。</figcaption>
+</figure>
+
+<p>Network Security Config は次の内容で <code>res/xml/network_security_config.xml</code> に追加し、manifest の <code>application</code> に
+<code>android:networkSecurityConfig="@xml/network_security_config"</code> を付けます。</p>
+<pre><code>&lt;network-security-config&gt;
+  &lt;base-config&gt;
+    &lt;trust-anchors&gt;
+      &lt;certificates src="system" /&gt;
+      &lt;certificates src="user" /&gt;
+      &lt;certificates src="@raw/amazon_root_ca_1" /&gt;  &lt;!-- 中身は mitmproxy の CA --&gt;
+    &lt;/trust-anchors&gt;
+  &lt;/base-config&gt;
+&lt;/network-security-config&gt;</code></pre>
+
+<h3>エミュレータ側の設定</h3>
+<ul>
+  <li>GPU は <code>-gpu auto</code> で起動します（<code>swiftshader_indirect</code> だと macOS で画面が真っ黒になりました）。</li>
+  <li>プロキシは起動オプション <code>-http-proxy</code> ではなく、システム設定で指定します（前者は WebView が白紙になりました）。
+    <pre><code>adb shell settings put global http_proxy 10.0.2.2:8080</code></pre></li>
+  <li>mitmproxy の CA をシステム領域に置く方法（tmpfs で <code>/system/etc/security/cacerts/</code> などに重ねる）は、SELinux のコンテキストが合わず単独では効きません。上の NSC と組み合わせます。</li>
+</ul>
+
+<div class="callout">
+  <strong>副作用</strong>
+  <p>自前の鍵で署名し直すため、Firebase の API がすべて拒否されます（プッシュ通知が届かない）。ペアリング・映像・Protobuf コマンドなどの中核機能は Firebase を使わないので、解析には影響しません。</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="step5">STEP 5 実機でペアリング</h2>
+
+<p>改変したアプリをエミュレータで動かし、実際の親機とペアリングさせて、その間の通信を記録しました。</p>
+
+<h3>QR コードの扱い</h3>
+<p>親機の「スマホ追加」で表示される QR コードは <code>https://intercom.iot-webrtc.net/reg/&lt;token&gt;</code> という URL で、<strong>トークンは 1 回しか使えません</strong>。
+iPhone のカメラで写すと URL を開くバナーが出て、うっかりタップすると Safari がトークンを消費してしまいます。そこで次のどちらかで読みます。</p>
+<ul>
+  <li>写真として撮り、Mac に送って <code>zbar</code> でデコードする。
+    <pre><code>sips -s format png IMG_xxxx.HEIC --out qr.png
+zbarimg --raw qr.png</code></pre></li>
+  <li>エミュレータの背面カメラに iPhone（連係カメラ）を割り当て、アプリ自身の QR スキャナで読ませる。
+    <pre><code>emulator -webcam-list -avd doorphone        # webcam1 が iPhone だった
+emulator -avd doorphone -writable-system -no-snapshot-load -gpu auto -camera-back webcam1</code></pre></li>
+</ul>
+
+<h3>証明書と秘密鍵の取り出し</h3>
+<p>ペアリングが終わると、アプリは親機が発行したクライアント証明書と秘密鍵を、データ領域のキーストア（AWS IoT SDK の <code>AWSIotKeystoreHelper</code> が作る BKS 形式）に保存します。
+<code>adb root</code> で取り出し、<code>pyjks</code> で読みます。キーストアのパスワードはアプリ内の定数で、jadx の出力から分かります。</p>
+<pre><code>import jks
+ks = jks.bks.BksKeyStore.load("&lt;キーストアファイル&gt;", "&lt;パスワード&gt;")
+for alias, e in ks.entries.items():      # alias は unitId
+    e.decrypt("&lt;パスワード&gt;")
+    key = e.nested.pkey_pkcs8             # EC P-256 の秘密鍵（PKCS#8）
+    certs = [c.cert for c in e.nested.cert_chain]   # DER の証明書</code></pre>
+<p>証明書の発行者は Panasonic の独自ルート CA、鍵は EC P-256、有効期限は 50 年でした。Subject は汎用の値（<code>CN=IoT Application…</code>）で、
+AWS IoT の「モノ」として設計されていることが分かります。</p>
+
+<h3>記録で分かったペアリングの流れ</h3>
+<ol>
+  <li>QR の URL に HMAC 付きで GET すると、AWS の一時クレデンシャル・<code>channelName</code>・<code>PeerIdPrefix</code> が返る。</li>
+  <li>そのクレデンシャルで KVS に VIEWER として接続し（clientId は <code>&lt;PeerIdPrefix&gt;-SP_&lt;UUID&gt;</code>）、DataChannel で <code>Request_Pairing</code> に CSR を載せて送る。</li>
+  <li>親機が <code>Notify_AnswerPairing</code> で証明書を返す。以後の clientId は <code>SP_&lt;UUID&gt;</code>。</li>
+</ol>
+<p>この流れはその後、Node.js で一から再現できることを確かめました（<code>hap/pair.js</code>）。そのとき、<code>csr</code> / <code>client_cert</code> を DER のバイト列で送ると
+親機が何も返さず、PEM 文字列にして初めて応答しました。復元した proto でこれらが <code>string</code> 型だったことが手がかりになりました。</p>
+
+<!-- ============================================================ -->
+<h2 id="step6">STEP 6 クレデンシャル経路</h2>
+
+<p><code>/reg</code> で得られるクレデンシャルは約 10 分で失効し、トークンも 1 回限りです。ペアリング済みのアプリが毎回どうやってクレデンシャルを得ているかが、次の課題でした。</p>
+<ul>
+  <li>最初は AWS IoT の Credential Provider（mTLS の HTTPS エンドポイント）を予想しましたが、mitmproxy には該当する通信が現れませんでした。</li>
+  <li>アプリが AWS IoT Device SDK を使っている箇所（<code>external/manager/</code>）を読むと、MQTT で親機にコマンドを送っていることが分かりました。
+    MQTT（ポート 8883）は HTTP プロキシを通らないので、mitmproxy には見えていなかったわけです。</li>
+  <li>Python（<code>awscrt</code>）で再現：ペアリングで得た証明書で MQTT に接続し、<code>doorphone/comm/&lt;unitId&gt;</code> に
+    <code>GET_SIGNALING_CHANNEL</code> を送ると、親機が <code>NOTIFY_KVS_CREDENTIAL</code> で新しいクレデンシャルを返しました（<code>research/get_kvs_creds.py</code>）。
+    これで QR なしで何度でもクレデンシャルを得られることが確定しました。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="step7">STEP 7 WebRTC 視聴</h2>
+
+<p>最も時間がかかった段階です。シグナリング（SDP / ICE の交換）は早い段階で通りましたが、映像が 1 フレームも来ない状態が続きました。</p>
+
+<table>
+  <thead><tr><th>試したもの</th><th>結果</th><th>原因・学び</th></tr></thead>
+  <tbody>
+    <tr><td>Python <code>aiortc</code></td><td>DTLS まで成立、映像 0 パケット。DataChannel の SCTP が INIT を送り続けて失敗。</td><td>SCTP の実装差と、offer の形が純正アプリと違うことが重なっていた。深追いをやめた。</td></tr>
+    <tr><td>Node <code>@roamhq/wrtc</code></td><td>親機の answer で映像が <code>inactive</code>。</td><td>このビルドは H264 を扱えず VP8 だけを offer していた。親機は H264 しか送らない。</td></tr>
+    <tr><td>Node <code>node-datachannel</code></td><td><strong>映像受信に成功</strong>。</td><td>offer を純正アプリと同じ形にでき、RTP をそのまま受け取れる（自分でデパケタイズする前提）。</td></tr>
+  </tbody>
+</table>
+
+<h3>映像が来るまでに必要だったこと</h3>
+<p>mitmproxy で記録した純正アプリの SDP offer と 1 項目ずつ突き合わせ、親機の answer と受信パケット数を見ながら絞り込みました。</p>
+<ol>
+  <li><strong>offer の形</strong>：音声は <code>sendrecv</code>（無音でも送り続ける）、映像は <code>recvonly</code> で H264（<code>profile-level-id=42e01f</code> など）を含める。</li>
+  <li><strong>DataChannel の向き</strong>：親機は自分から <code>MasterToViewer</code> を開いてくるが、そこに書いたコマンドは無視される。自分で作った DC に送る。</li>
+  <li><strong><code>Request_Connect</code> を送る</strong>：親機は接続しただけでは映像を送らない。モニター開始の要求が必要。</li>
+  <li><strong>引数</strong>：最初は名前から <code>DEVICE_CAMERA, devno=1</code> を送り、<code>REASON_CONNECTION_FAILED</code> が返った。
+    玄関子機は <code>DEVICE_DOOR, devno=0</code>、<code>version = VERSION_1</code> も入れる。<code>DEVICE_CAMERA</code> は増設カメラ用だった（後で増設カメラで確認）。</li>
+  <li><strong>clientId</strong>：KVS の clientId は、ペアリングで登録した <code>mobileDeviceId</code> と一致させる。違う ID でも接続はできるが映像は来ない。</li>
+</ol>
+<p>受信できた映像は H264 Baseline（pt 101、1280×720）、音声は PCMU 8 kHz でした。ICE は LAN 内のホスト候補どうしで直結し、TURN は使われませんでした。</p>
+
+<!-- ============================================================ -->
+<h2 id="step8">STEP 8 HomeKit 化</h2>
+
+<p>HAP-NodeJS でカメラアクセサリを作り、受信した映像を ffmpeg で HomeKit の SRTP に流しました。ここでも試行錯誤がありました。</p>
+<ul>
+  <li><strong>映像は再エンコードしない</strong>：最初は RTP を SDP ファイル経由で ffmpeg に読ませ libx264 で再エンコードしていましたが、iPhone のデコーダが同期を外し続けました。
+    Node 側でデパケタイズして stdin に H264 を流し、<code>-c:v copy</code> で詰め直すだけにしたら安定しました。</li>
+  <li><strong>音声が 3 回に 1 回しか聞こえない</strong>：ffmpeg の設定を 20 通りほど変えても直らず、go2rtc のソース（<code>pkg/opus/homekit.go</code>）を読んで、
+    HomeKit が Opus の RTP タイムスタンプを RFC 7587 ではなく RFC 3550 の流儀で解釈していると分かりました。タイムスタンプを書き換えるため SRTP を自前で実装しました。</li>
+  <li><strong>reconfigure</strong>：HomeKit のビットレート変更要求のたびに ffmpeg を作り直すと約 27 秒で映像が止まるので、無視するようにしました。</li>
+  <li><strong>常時接続しない</strong>：セッションを張り続けると親機に「スマホで使用中」と出て親機のモニターが使えないため、HomeKit のストリーム中だけ接続し、
+    終わったら <code>Request_Disconnect</code> を送るようにしました。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="later">追加機能の解析</h2>
+
+<h3>録画の一覧と取得</h3>
+<p>復元した proto に <code>Request_GetRecordList</code> や <code>Request_GetFile</code> があったので、<code>Request_Connect</code> を送らないセッションで試しました。</p>
+<ul>
+  <li>手順は <code>Request_GetRecordControl</code>（操作権の取得）→ <code>Request_GetRecordList</code> → <code>Request_ReleaseRecordControl</code>。</li>
+  <li><code>Request_GetFile</code> で SD 上のファイル（<code>/media/card/PRIVATE/…/*.MP4</code>）をそのまま読めました。録画は普通の MP4 で、ストリーミング再生の仕組みは不要でした。</li>
+  <li>大きな応答は、こちらが次のメッセージを送るまで届かないことがありました。同じ要求を一定間隔で再送する（nudge）と解消しました。</li>
+</ul>
+
+<h3>録画の通知（断念）</h3>
+<p>新しい録画をすぐ NAS に送るため、FCM のプッシュ通知を受ける方法を試しました。APK から Firebase の設定値と署名証明書のハッシュを取り出し、
+トークンを取得して <code>Request_SetProfile</code> で親機に登録するところまではできましたが、録画が起きても通知が届きませんでした。最終的に 1 時間ごとのポーリングにしました。</p>
+
+<h3>増設カメラ</h3>
+<ul>
+  <li><code>Request_GetState</code> の応答に <code>door.doors[]</code>（3 枠）と <code>camera.cameras[]</code>（4 枠）があり、登録済みの枠だけ <code>enable: true</code> と名前が入っていました。</li>
+  <li>デモ用ユニットの実装で <code>devno</code> が 0 始まりであることを確認し、<code>DEVICE_CAMERA, devno=0</code> で増設カメラの映像（H264 Baseline 1280×720）を受信できました。
+    取り出したフレームが玄関子機と違う画角であることも確認しました。</li>
+  <li>玄関子機とカメラを同時に開くと、両方のセッションが交互に切断されました。同じ clientId のセッションは 1 本しか持てないと判断し、カメラ間で排他するようにしました。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="debug">デバッグの進め方</h2>
+
+<h3>小さな検証スクリプトを親機に当てる</h3>
+<p>サービス全体を動かすより、確かめたいことだけを行うスクリプトを書くほうが速く確実です。RPi 上では、インストール済みの <code>node_modules</code> にシンボリックリンクを張った作業ディレクトリに
+モジュールと検証スクリプトをコピーして、サービス用ユーザーで実行しました。</p>
+<pre><code>mkdir /tmp/dptest &amp;&amp; ln -s /opt/doorphone-hap/node_modules /tmp/dptest/
+# doorphone-source.js などと検証スクリプトをコピーしてから
+sudo -u doorphone-hap node /tmp/dptest/probe.js</code></pre>
+<p>例えば増設カメラの調査では、次のような検証をそれぞれ数十行のスクリプトで行いました。</p>
+<ul>
+  <li><code>Request_GetState</code> を送って応答を JSON で表示する。</li>
+  <li>指定した <code>device</code> / <code>devno</code> に接続して 20 秒分の H264 を保存し、<code>ffprobe</code> で解像度を見て、<code>ffmpeg</code> でフレームを書き出して目で確認する。</li>
+  <li>2 つのカメラを同時に・順番に開いて、状態遷移とパケット数をログに出す。</li>
+  <li>受信した NAL の種類の並び（SPS / PPS / IDR / P）と、IDR の欠損回数を数える。</li>
+</ul>
+<p>親機は同時に 1 セッションしか扱えないので、検証中はサービスと取り合わないよう注意します（サービスがアイドルなら問題なし、必要なら一時停止）。</p>
+
+<h3>メッセージを読む</h3>
+<p>DataChannel のメッセージは 16 進でログに出し、<code>proto/gen</code> でデコードして確認します。</p>
+<pre><code>node -e "
+const {loadTypes} = require('./hap/base-rpc');
+const T = loadTypes().WebRtcMessage;
+console.log(JSON.stringify(T.toObject(T.decode(Buffer.from(process.argv[1], 'hex')), {enums: String})));
+" 08011001aa06140801a2010958026003a201020801a80101b00101</code></pre>
+
+<h3>落ちたときは</h3>
+<p><code>terminate called after throwing an instance of 'std::runtime_error'</code> のようにネイティブ側で落ちた場合、JavaScript のスタックは出ません。
+node-datachannel のソース（<code>src/cpp/*.cpp</code>）で例外を JavaScript に変換していない関数を探すのが近道です。
+<code>requestKeyframe()</code> がまさにそれで、接続が 2 秒以上かかったときだけ再現する、という条件の絞り込みから見つかりました。</p>
+
+<!-- ============================================================ -->
+<h2 id="facts">判明した事実の一覧</h2>
+
+<table>
+  <thead><tr><th>項目</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td>ペアリング登録</td><td><code>GET https://intercom.iot-webrtc.net/reg/&lt;token&gt;</code>、ヘッダ <code>x-auth-hash</code> = Base64(HMAC-SHA256(鍵, token))。トークンは 1 回限り。</td></tr>
+    <tr><td>登録の応答</td><td>AWS 一時クレデンシャル（約 10 分）、<code>channelName</code>、<code>PeerIdPrefix</code>、<code>modelType</code>。</td></tr>
+    <tr><td>証明書</td><td>EC P-256、Panasonic 独自ルート CA が発行、有効期限 50 年。CSR の Subject は区切り無しで連結した 1 つの CN。</td></tr>
+    <tr><td>clientId</td><td>ペアリング中は <code>&lt;PeerIdPrefix&gt;-SP_&lt;UUID&gt;</code>、以後は <code>SP_&lt;UUID&gt;</code>（= <code>mobileDeviceId</code>）。</td></tr>
+    <tr><td>クレデンシャル更新</td><td>AWS IoT MQTT（mTLS、8883）。トピック <code>doorphone/comm/&lt;unitId&gt;</code> に <code>GET_SIGNALING_CHANNEL</code> → <code>NOTIFY_KVS_CREDENTIAL</code>。登録解除後は <code>{error: "NOT_REGISTERED"}</code>。</td></tr>
+    <tr><td>シグナリング</td><td>KVS（ap-northeast-1）、SINGLE_MASTER チャネルに VIEWER として接続。親機は常に <code>a=setup:active</code>（こちらが DTLS サーバ）。</td></tr>
+    <tr><td>メディア</td><td>映像 H264 Baseline（pt 101）1280×720、音声 PCMU 8 kHz。SRTP は <code>AES128_CM_SHA1_80</code>。</td></tr>
+    <tr><td>DataChannel</td><td>親機が <code>MasterToViewer</code> を開く。コマンドは自分が開いた DC に送る。親機は DCEP ACK を返さない。</td></tr>
+    <tr><td>モニター開始</td><td><code>Request_Connect{device, devno, type: MONITOR}</code>、<code>version = VERSION_1</code>。玄関子機 = <code>DEVICE_DOOR</code>、増設カメラ = <code>DEVICE_CAMERA</code>、<code>devno</code> は 0 始まり。</td></tr>
+    <tr><td>セッション数</td><td>同じ clientId のセッションは 1 本だけ。2 本張ると交互に切断される。接続中は親機に「スマホで使用中」と表示される。</td></tr>
+    <tr><td>機器一覧</td><td><code>Request_GetState</code> の <code>door.doors[]</code>（3 枠）、<code>camera.cameras[]</code>（4 枠）。</td></tr>
+    <tr><td>録画</td><td><code>GetRecordControl</code> → <code>GetRecordList</code> → <code>GetFile</code>。録画は普通の MP4（H264 + AAC 16 kHz）。モニター接続は不要。</td></tr>
+  </tbody>
+</table>
+
+<footer class="page">doorphone-hap — <a href="index.html">ドキュメント目次</a> · <a href="code.html">コードの詳細な説明</a></footer>
+</main>
+</div>
+</body>
+</html>
