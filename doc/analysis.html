@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>ドアホンの解析方法 — doorphone-hap</title>
+<title>ドアホンの解析方法 — Doorphone Bridge</title>
 <style>
-/* doorphone-hap documentation — shared styles */
+/* Doorphone Bridge documentation — shared styles */
 :root {
   --bg: #ffffff;
   --fg: #1f2328;
@@ -193,7 +193,7 @@ footer.page { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--l
 
 <main>
 <header class="page">
-  <p class="kicker">doorphone-hap ドキュメント</p>
+  <p class="kicker">Doorphone Bridge ドキュメント</p>
   <h1>ドアホンの解析方法</h1>
   <p class="lead">純正アプリ「ドアホンコネクト S」（Android 版）を手がかりに、VL-X70AH 親機との通信プロトコルをどう調べたかを、
   実際に進めた順に説明します。調べた結果をどう実装したかは <a href="code.html">コードの詳細な説明</a> を参照してください。</p>
@@ -373,7 +373,7 @@ apktool d -f -s -o research/apktool-out apks/com.panasonic.doorphoneconnects.apk
     <tr><td>デモ用ユニットの実装（<code>p132q4/g.java</code> など）</td><td>親機なしで UI を動かすための模擬応答。<code>devno</code> が 0 始まりであることなど、親機の応答の形が分かる。</td></tr>
   </tbody>
 </table>
-<p>HMAC 鍵の探し方は <code>research/extract-hmac-key.md</code> に詳しく書いてあります。見つけた値は <code>/etc/doorphone-hap/hmac.key</code> に 1 行で保存します。</p>
+<p>HMAC 鍵の探し方は <code>research/extract-hmac-key.md</code> に詳しく書いてあります。見つけた値は <code>/etc/doorphone-bridge/hmac.key</code> に 1 行で保存します。</p>
 
 <p>この段階で分かったクラウド側のエンドポイントは次のとおりです。</p>
 <table>
@@ -715,9 +715,9 @@ AWS IoT の「モノ」として設計されていることが分かります。
 <h3>小さな検証スクリプトを親機に当てる</h3>
 <p>サービス全体を動かすより、確かめたいことだけを行うスクリプトを書くほうが速く確実です。RPi 上では、インストール済みの <code>node_modules</code> にシンボリックリンクを張った作業ディレクトリに
 モジュールと検証スクリプトをコピーして、サービス用ユーザーで実行しました。</p>
-<pre><code>mkdir /tmp/dptest &amp;&amp; ln -s /opt/doorphone-hap/node_modules /tmp/dptest/
+<pre><code>mkdir /tmp/dptest &amp;&amp; ln -s /opt/doorphone-bridge/node_modules /tmp/dptest/
 # doorphone-source.js などと検証スクリプトをコピーしてから
-sudo -u doorphone-hap node /tmp/dptest/probe.js</code></pre>
+sudo -u doorphone-bridge node /tmp/dptest/probe.js</code></pre>
 <p>例えば増設カメラの調査では、次のような検証をそれぞれ数十行のスクリプトで行いました。</p>
 <ul>
   <li><code>Request_GetState</code> を送って応答を JSON で表示する。</li>
@@ -761,7 +761,7 @@ node-datachannel のソース（<code>src/cpp/*.cpp</code>）で例外を JavaSc
   </tbody>
 </table>
 
-<footer class="page">doorphone-hap — <a href="code.html">コードの詳細な説明</a></footer>
+<footer class="page">Doorphone Bridge — <a href="code.html">コードの詳細な説明</a></footer>
 </main>
 </div>
 </body>

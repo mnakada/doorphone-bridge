@@ -6,13 +6,13 @@ case "$1" in
     # Only on purge: remove state and system user. Keep config around in case
     # the user is switching between versions; let dpkg handle conffiles.
     if [ -d /run/systemd/system ]; then
-      systemctl disable doorphone-hap.service >/dev/null 2>&1 || true
+      systemctl disable doorphone-bridge.service >/dev/null 2>&1 || true
       systemctl daemon-reload || true
     fi
-    if getent passwd doorphone-hap >/dev/null; then
-      deluser --system doorphone-hap >/dev/null 2>&1 || true
+    if getent passwd doorphone-bridge >/dev/null; then
+      deluser --system doorphone-bridge >/dev/null 2>&1 || true
     fi
-    rm -rf /var/lib/doorphone-hap /run/doorphone-hap || true
+    rm -rf /var/lib/doorphone-bridge /run/doorphone-bridge || true
     ;;
   upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
     if [ -d /run/systemd/system ]; then

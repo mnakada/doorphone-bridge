@@ -16,10 +16,10 @@ const DEFAULTS = {
     port: 47129,
   },
   doorphone: {
-    credsPath: '/etc/doorphone-hap/kvs_creds.json',
-    certPath: '/etc/doorphone-hap/cert.pem',
-    keyPath: '/etc/doorphone-hap/privkey.pem',
-    unitInfoPath: '/etc/doorphone-hap/unit.json',
+    credsPath: '/etc/doorphone-bridge/kvs_creds.json',
+    certPath: '/etc/doorphone-bridge/cert.pem',
+    keyPath: '/etc/doorphone-bridge/privkey.pem',
+    unitInfoPath: '/etc/doorphone-bridge/unit.json',
     videoPort: 5004,
     audioPort: 5006,
   },
@@ -27,11 +27,11 @@ const DEFAULTS = {
     path: 'ffmpeg',
   },
   storage: {
-    persistPath: '/var/lib/doorphone-hap/persist',
-    sdpPath: '/run/doorphone-hap/doorphone.sdp',
+    persistPath: '/var/lib/doorphone-bridge/persist',
+    sdpPath: '/run/doorphone-bridge/doorphone.sdp',
     // NAS sync settings (server/password) live in their own file so the Web UI
     // can edit them and secrets stay out of config.json.
-    nasConfigPath: '/etc/doorphone-hap/nas.json',
+    nasConfigPath: '/etc/doorphone-bridge/nas.json',
   },
   web: {
     enabled: true,

@@ -5,30 +5,30 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=doorphone-hap
-Group=doorphone-hap
+User=doorphone-bridge
+Group=doorphone-bridge
 Environment=NODE_ENV=production
-Environment=CONFIG_PATH=/etc/doorphone-hap/config.json
-WorkingDirectory=/opt/doorphone-hap
-ExecStart=/usr/bin/node /opt/doorphone-hap/bin/doorphone-hap serve
+Environment=CONFIG_PATH=/etc/doorphone-bridge/config.json
+WorkingDirectory=/opt/doorphone-bridge
+ExecStart=/usr/bin/node /opt/doorphone-bridge/bin/doorphone-bridge serve
 Restart=on-failure
 RestartSec=5
 # The app exits 75 after a successful re-pair from the Web UI so it boots
 # again with the new cert; always restart on that code.
 RestartForceExitStatus=75
-# Runtime dirs managed by systemd (/run/doorphone-hap)
-RuntimeDirectory=doorphone-hap
+# Runtime dirs managed by systemd (/run/doorphone-bridge)
+RuntimeDirectory=doorphone-bridge
 RuntimeDirectoryMode=0750
-StateDirectory=doorphone-hap
+StateDirectory=doorphone-bridge
 StateDirectoryMode=0750
 # Hardening
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Pairing needs to drop cert/key/unit into /etc/doorphone-hap; otherwise the
+# Pairing needs to drop cert/key/unit into /etc/doorphone-bridge; otherwise the
 # service has only the credentials file open for writes.
-ReadWritePaths=/var/lib/doorphone-hap /etc/doorphone-hap
+ReadWritePaths=/var/lib/doorphone-bridge /etc/doorphone-bridge
 ProtectKernelTunables=true
 ProtectKernelModules=true
 RestrictSUIDSGID=true

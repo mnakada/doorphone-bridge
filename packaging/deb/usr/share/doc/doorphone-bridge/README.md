@@ -1,4 +1,4 @@
-# doorphone-hap
+# Doorphone Bridge
 
 HomeKit bridge for the Panasonic VL-X70AH doorphone.
 
@@ -13,27 +13,27 @@ nothing is advertised to HomeKit yet.
 2. Open `http://<rpi-host>:8080/` in a browser **on the same LAN**.
 3. Upload the QR photo (or paste the decoded URL) and click *Pair*.
 4. On success the UI writes `cert.pem` / `privkey.pem` / `unit.json`
-   into `/etc/doorphone-hap/` and prompts to restart the service.
+   into `/etc/doorphone-bridge/` and prompts to restart the service.
 
 Alternatively from the shell:
 ```
-sudo doorphone-hap pair /path/to/qr.jpg
-sudo systemctl restart doorphone-hap
+sudo doorphone-bridge pair /path/to/qr.jpg
+sudo systemctl restart doorphone-bridge
 ```
 
 ### Add to Apple Home
 
-1. Edit `/etc/doorphone-hap/config.json` — change `pincode` and `username`
+1. Edit `/etc/doorphone-bridge/config.json` — change `pincode` and `username`
    (a stable fake MAC for HomeKit identity) if you don't like the defaults.
-2. `sudo systemctl restart doorphone-hap`
+2. `sudo systemctl restart doorphone-bridge`
 3. In the Home app: *Add Accessory* → *More options* → pick "Doorphone" →
    enter the setup code.
 
 ## Operation
 
 - The service mDNS-advertises itself as `_hap._tcp` on the LAN.
-- Credentials live in `/etc/doorphone-hap/` (readable only by the service user).
-- Persistent HomeKit state is in `/var/lib/doorphone-hap/persist/`.
+- Credentials live in `/etc/doorphone-bridge/` (readable only by the service user).
+- Persistent HomeKit state is in `/var/lib/doorphone-bridge/persist/`.
 - Logs go to the systemd journal.
 
 ## Known limitations (v0.0.1)

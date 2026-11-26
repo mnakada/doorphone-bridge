@@ -5,7 +5,7 @@ VL-X70AH 「ドアホンコネクトS」ペアリング実行スクリプト
 使い方:
   1) 親機でスマホ追加モードにし、画面に QR を表示
   2) iPhone カメラで写真撮影（QR スキャン機能は使わない）
-  3) AirDrop 等で Mac に転送（例: ~/c/doorphone/qr.HEIC）
+  3) AirDrop 等で Mac に転送（例: ~/c/doorphone-bridge/qr.HEIC）
   4) ./pair.py qr.HEIC --hmac-key /path/to/hmac.key
 
 QR URL はワンショット + AWS 一時クレデンシャル有効期限 10 分以内なので、
@@ -16,7 +16,7 @@ HMAC 鍵は Panasonic APK から自分で抽出する必要あり — research/e
 import argparse, base64, hmac, hashlib, json, os, ssl, socket, subprocess, sys
 from pathlib import Path
 
-DEFAULT_HMAC_KEY_PATH = "/etc/doorphone-hap/hmac.key"
+DEFAULT_HMAC_KEY_PATH = "/etc/doorphone-bridge/hmac.key"
 
 
 def load_hmac_key(path=None):

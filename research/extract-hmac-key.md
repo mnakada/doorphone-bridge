@@ -127,12 +127,12 @@ grep -rE 'const-string.*"[A-Za-z0-9+/=]{40,}"' apktool-out/smali*/com/panasonic/
 コード側 (`hap/pair.js` / `research/pair.py`) は既にこのファイルを読み込む
 ように作ってあります。
 
-### 本番 (RPi): `/etc/doorphone-hap/hmac.key`
+### 本番 (RPi): `/etc/doorphone-bridge/hmac.key`
 
 ```sh
-echo 'C7OMO8OT...2A==' | sudo tee /etc/doorphone-hap/hmac.key
-sudo chown doorphone-hap:doorphone-hap /etc/doorphone-hap/hmac.key
-sudo chmod 640 /etc/doorphone-hap/hmac.key
+echo 'C7OMO8OT...2A==' | sudo tee /etc/doorphone-bridge/hmac.key
+sudo chown doorphone-bridge:doorphone-bridge /etc/doorphone-bridge/hmac.key
+sudo chmod 640 /etc/doorphone-bridge/hmac.key
 ```
 
 ### 開発時 (Mac): 任意のパス
@@ -153,14 +153,14 @@ python research/pair.py qr.jpg --hmac-key ./hmac.key
 
 1. CLI オプション `--hmac-key <path>`
 2. 環境変数 `HMAC_KEY_PATH`
-3. デフォルト `/etc/doorphone-hap/hmac.key`
+3. デフォルト `/etc/doorphone-bridge/hmac.key`
 
 ファイルの中身は **base64 文字列 1 行** (改行・空白は trim される)。
 
 ## 5. 動作確認
 
 ```sh
-sudo doorphone-hap pair https://intercom.iot-webrtc.net/reg/<token>
+sudo doorphone-bridge pair https://intercom.iot-webrtc.net/reg/<token>
 ```
 
 `401 Unauthorized` が返るなら鍵が間違っています。

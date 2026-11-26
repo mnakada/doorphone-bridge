@@ -1,2 +1,2 @@
-/etc/doorphone-hap/config.json
-/etc/doorphone-hap/hmac.key
+/etc/doorphone-bridge/config.json
+/etc/doorphone-bridge/hmac.key

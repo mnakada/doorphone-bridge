@@ -7,7 +7,7 @@ unit.json
 app.db
 KeyStoreName_*
 hmac.key
-packaging/deb/etc/doorphone-hap/hmac.key
+packaging/deb/etc/doorphone-bridge/hmac.key
 
 # Decompiled / reverse-engineered Android app sources (copyrighted upstream)
 # Kept under research/ for traceability only.
@@ -22,7 +22,7 @@ research/.venv/
 research/ドアホンコネクトS解析.txt
 
 # Build outputs / caches
-/doorphone-hap_*.deb
+/doorphone-bridge_*.deb
 packaging/stage/
 packaging/scripts-mount/
 packaging/.container-out/

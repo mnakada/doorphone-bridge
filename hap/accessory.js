@@ -95,7 +95,7 @@ if (fs.existsSync(cfg.doorphone.unitInfoPath) &&
   refresher.on('revoked', () => {
     // Base station no longer answers — move the paired cert aside so the Web
     // UI drops back to "unpaired" and the user can re-pair without hand-
-    // editing /etc/doorphone-hap. kvs_creds.json goes too: it's useless once
+    // editing /etc/doorphone-bridge. kvs_creds.json goes too: it's useless once
     // the cert is dead, and leaving it makes the next boot try (and fail)
     // to start the source with expired tokens.
     const ts = new Date().toISOString().replace(/[:.]/g, '-');

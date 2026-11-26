@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * doorphone-hap pairing.
+ * doorphone-bridge pairing.
  *
  * 1. decode QR (image file or URL)
  * 2. HMAC + GET /reg/<token> → AWS temp creds + channelName + PeerIdPrefix
@@ -10,7 +10,7 @@
  * 6. save cert.pem, privkey.pem, unit.json to the output directory
  *
  * CLI usage (also exported as a library):
- *   node pair.js <qr.jpg|qr.heic|url>  [--out /etc/doorphone-hap] [--profile-name "Doorphone"]
+ *   node pair.js <qr.jpg|qr.heic|url>  [--out /etc/doorphone-bridge] [--profile-name "Doorphone"]
  */
 const fs = require('fs');
 const path = require('path');
@@ -36,7 +36,7 @@ const REG_HOST = 'intercom.iot-webrtc.net';
 // HMAC key for /reg/<token>. Not shipped in the repo; the user extracts it
 // from the Panasonic APK once (see research/extract-hmac-key.md) and drops it
 // here as a single-line base64 file.
-const DEFAULT_HMAC_KEY_PATH = '/etc/doorphone-hap/hmac.key';
+const DEFAULT_HMAC_KEY_PATH = '/etc/doorphone-bridge/hmac.key';
 function loadHmacKey(p) {
   const file = p || process.env.HMAC_KEY_PATH || DEFAULT_HMAC_KEY_PATH;
   let raw;
@@ -477,7 +477,7 @@ async function pair({ input, outDir, profileName, hmacKeyPath, logger = () => {}
 
 // ---------------------------------------------------------------- cli
 async function cli(argv) {
-  const args = { out: '/etc/doorphone-hap', profileName: 'Doorphone Bridge', hmacKeyPath: null };
+  const args = { out: '/etc/doorphone-bridge', profileName: 'Doorphone Bridge', hmacKeyPath: null };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -485,7 +485,7 @@ async function cli(argv) {
     else if (a === '--profile-name') args.profileName = argv[++i];
     else if (a === '--hmac-key') args.hmacKeyPath = argv[++i];
     else if (a === '-h' || a === '--help') {
-      console.log('Usage: pair <qr.jpg|qr.heic|url> [--out /etc/doorphone-hap] [--profile-name "Name"] [--hmac-key /path/to/hmac.key]');
+      console.log('Usage: pair <qr.jpg|qr.heic|url> [--out /etc/doorphone-bridge] [--profile-name "Name"] [--hmac-key /path/to/hmac.key]');
       process.exit(0);
     } else positional.push(a);
   }

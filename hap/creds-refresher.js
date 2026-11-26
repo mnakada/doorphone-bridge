@@ -11,7 +11,7 @@
  *   5. Repeat before expiry (~10 min window).
  *
  * The refresher runs inside the accessory process; it reuses the paired cert
- * from /etc/doorphone-hap/cert.pem + privkey.pem and the unitId from unit.json.
+ * from /etc/doorphone-bridge/cert.pem + privkey.pem and the unitId from unit.json.
  */
 const fs = require('fs');
 const path = require('path');

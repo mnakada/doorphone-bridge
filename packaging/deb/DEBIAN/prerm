@@ -4,7 +4,7 @@ set -e
 case "$1" in
   remove|upgrade|deconfigure)
     if [ -d /run/systemd/system ]; then
-      systemctl stop doorphone-hap.service || true
+      systemctl stop doorphone-bridge.service || true
     fi
     ;;
 esac

@@ -1,10 +1,10 @@
 #!/bin/sh
-# postinst for doorphone-hap
+# postinst for doorphone-bridge
 set -e
 
-USER_NAME=doorphone-hap
-STATE_DIR=/var/lib/doorphone-hap
-CONFIG_DIR=/etc/doorphone-hap
+USER_NAME=doorphone-bridge
+STATE_DIR=/var/lib/doorphone-bridge
+CONFIG_DIR=/etc/doorphone-bridge
 
 case "$1" in
   configure)
@@ -35,14 +35,14 @@ case "$1" in
     # Reload systemd, enable + (re)start the service.
     if [ -d /run/systemd/system ]; then
       systemctl daemon-reload || true
-      systemctl enable doorphone-hap.service || true
-      systemctl restart doorphone-hap.service || true
+      systemctl enable doorphone-bridge.service || true
+      systemctl restart doorphone-bridge.service || true
       HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
       echo
-      echo "doorphone-hap installed. Pair via the Web UI:"
+      echo "doorphone-bridge installed. Pair via the Web UI:"
       echo "  http://${HOST_IP:-<this-host>}:8080/"
       echo "or from the CLI:"
-      echo "  sudo doorphone-hap pair <qr.jpg|qr.png|https://intercom.iot-webrtc.net/reg/...>"
+      echo "  sudo doorphone-bridge pair <qr.jpg|qr.png|https://intercom.iot-webrtc.net/reg/...>"
       echo
     fi
     ;;

@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>コードの説明 — doorphone-hap</title>
+<title>コードの説明 — Doorphone Bridge</title>
 <style>
-/* doorphone-hap documentation — shared styles */
+/* Doorphone Bridge documentation — shared styles */
 :root {
   --bg: #ffffff;
   --fg: #1f2328;
@@ -200,7 +200,7 @@ footer.page { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--l
 
 <main>
 <header class="page">
-  <p class="kicker">doorphone-hap ドキュメント</p>
+  <p class="kicker">Doorphone Bridge ドキュメント</p>
   <h1>コードの説明</h1>
   <p class="lead">Panasonic のドアホン親機 VL-X70AH の映像を Apple Home のカメラとして見せるブリッジ
   <code>hap/</code> の内部構造を、処理の流れに沿って説明します。プロトコルをどう調べたかは
@@ -210,14 +210,14 @@ footer.page { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--l
 <!-- ============================================================ -->
 <h2 id="overview">1. 全体像</h2>
 
-<p>doorphone-hap は Raspberry Pi 上で動く 1 つの Node.js プロセスです。純正アプリ「ドアホンコネクト S」がスマホで行っていること
+<p>Doorphone Bridge は Raspberry Pi 上で動く 1 つの Node.js プロセスです。純正アプリ「ドアホンコネクト S」がスマホで行っていること
 （親機とのペアリング、クラウド経由のクレデンシャル取得、WebRTC での映像受信）を再実装し、受け取った映像を
 HomeKit Accessory Protocol（HAP）のカメラとして公開します。</p>
 
 <figure class="diagram">
   <svg id="dg-architecture" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 620" role="img" aria-labelledby="dg-architecture-title dg-architecture-desc">
-    <title id="dg-architecture-title">doorphone-hap 全体構成</title>
-    <desc id="dg-architecture-desc">Raspberry Pi 上の doorphone-hap が、Apple Home・ブラウザ・ドアホン親機・NAS・Panasonic クラウドとどうつながるかを示す構成図。</desc>
+    <title id="dg-architecture-title">Doorphone Bridge 全体構成</title>
+    <desc id="dg-architecture-desc">Raspberry Pi 上の Doorphone Bridge が、Apple Home・ブラウザ・ドアホン親機・NAS・Panasonic クラウドとどうつながるかを示す構成図。</desc>
     <style>
   
   #dg-architecture text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
@@ -256,7 +256,7 @@ HomeKit Accessory Protocol（HAP）のカメラとして公開します。</p>
   
     <!-- RPi container -->
     <rect class="frame" x="220" y="20" width="480" height="540" rx="12"/>
-    <text class="t" x="238" y="48">Raspberry Pi — doorphone-hap</text>
+    <text class="t" x="238" y="48">Raspberry Pi — Doorphone Bridge</text>
     <text class="s" x="238" y="68">systemd サービス / Node.js（1 プロセス）</text>
   
     <!-- Left column (users side) -->
@@ -278,7 +278,7 @@ HomeKit Accessory Protocol（HAP）のカメラとして公開します。</p>
   
     <rect class="bx yellow" x="240" y="460" width="190" height="64" rx="8"/>
     <text class="t" x="254" y="486">設定・状態ファイル</text>
-    <text class="s" x="254" y="508">/etc/doorphone-hap ほか</text>
+    <text class="s" x="254" y="508">/etc/doorphone-bridge ほか</text>
   
     <!-- Right column (base side) -->
     <rect class="bx green" x="490" y="100" width="190" height="64" rx="8"/>
@@ -387,7 +387,7 @@ HomeKit Accessory Protocol（HAP）のカメラとして公開します。</p>
   <thead><tr><th>パス</th><th>役割</th></tr></thead>
   <tbody>
     <tr><td><code>hap/accessory.js</code></td><td>エントリポイント。各モジュールを組み立て、カメラごとに HAP アクセサリを公開する。</td></tr>
-    <tr><td><code>hap/bin/doorphone-hap</code></td><td>CLI（<code>serve</code> / <code>pair</code> / <code>status</code> / <code>version</code>）。systemd は <code>serve</code> で起動する。</td></tr>
+    <tr><td><code>hap/bin/doorphone-bridge</code></td><td>CLI（<code>serve</code> / <code>pair</code> / <code>status</code> / <code>version</code>）。systemd は <code>serve</code> で起動する。</td></tr>
     <tr><td><code>hap/config.js</code></td><td>設定ファイル（JSON）と環境変数を読み、既定値とマージする。</td></tr>
     <tr><td><code>hap/creds-refresher.js</code></td><td>AWS IoT MQTT で一時クレデンシャルを取得し続ける。親機側の登録解除も検出する。</td></tr>
     <tr><td><code>hap/doorphone-source.js</code></td><td>カメラ 1 台分のライブセッション。KVS WebRTC で親機に接続し、H264 と PCMU を受け取る。</td></tr>
@@ -413,12 +413,12 @@ HomeKit Accessory Protocol（HAP）のカメラとして公開します。</p>
 
 <p><code>accessory.js</code> は上から順に次のことを行います。</p>
 <ol class="steps">
-  <li><strong>設定の読み込み</strong>：<code>CONFIG_PATH</code>（既定 <code>/etc/doorphone-hap/config.json</code>）を読み、<code>config.js</code> の既定値とマージします。</li>
+  <li><strong>設定の読み込み</strong>：<code>CONFIG_PATH</code>（既定 <code>/etc/doorphone-bridge/config.json</code>）を読み、<code>config.js</code> の既定値とマージします。</li>
   <li><strong>Web UI の起動</strong>：ペアリング前でも使えるよう、最初に HTTP サーバ（:8080）を立てます。</li>
   <li><strong>ペアリング済みかの判定</strong>：<code>cert.pem</code> も <code>kvs_creds.json</code> も無ければ、Web UI だけを動かして待ちます。</li>
   <li><strong>CredsRefresher の開始</strong>：MQTT に接続して一時クレデンシャルを取得します（<a href="#creds">4 章</a>）。</li>
   <li><strong>RecordService と NasSync の生成</strong>：録画機能と NAS 同期を準備します。この時点では親機に接続しません。</li>
-  <li><strong>カメラの公開</strong>：<code>/var/lib/doorphone-hap/devices.json</code> にキャッシュされた機器一覧（無ければ玄関子機 1 台）で
+  <li><strong>カメラの公開</strong>：<code>/var/lib/doorphone-bridge/devices.json</code> にキャッシュされた機器一覧（無ければ玄関子機 1 台）で
     アクセサリをすぐ公開し、クレデンシャル取得後に親機から最新の一覧を取り直します（<a href="#multi">6 章</a>）。</li>
 </ol>
 
@@ -1055,7 +1055,7 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
 
 <p>録画を一定間隔（既定 60 分）で SMB 共有にコピーします。マウントせず <code>smbclient</code> を使うので、root 権限は要りません。</p>
 <ul>
-  <li>設定は <code>/etc/doorphone-hap/nas.json</code> に分けて置き、Web UI から編集します。実行のたびに読み直すので再起動は要りません。</li>
+  <li>設定は <code>/etc/doorphone-bridge/nas.json</code> に分けて置き、Web UI から編集します。実行のたびに読み直すので再起動は要りません。</li>
   <li>保存先は strftime 形式のテンプレート（既定 <code>%Y%m%d/%H%M%S</code>、拡張子は自動）。ディレクトリは 1 階層ずつ <code>mkdir</code> します。</li>
   <li>パスワードは 0600 の一時ファイルで <code>smbclient -A</code> に渡し、プロセス一覧に出ないようにします。</li>
   <li>アップロード済みの録画は <code>nas-state.json</code> に記録し、二重に送りません。初回は既定で 7 日前まで遡ります。</li>
@@ -1066,7 +1066,7 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
 <!-- ============================================================ -->
 <h2 id="pairing">10. ペアリング（pair.js）</h2>
 
-<p>新しい「スマホ」として親機に登録し、クライアント証明書を発行してもらいます。CLI（<code>doorphone-hap pair</code>）と Web UI の両方から呼ばれます。</p>
+<p>新しい「スマホ」として親機に登録し、クライアント証明書を発行してもらいます。CLI（<code>doorphone-bridge pair</code>）と Web UI の両方から呼ばれます。</p>
 
 <figure class="diagram">
   <svg id="dg-pairing-sequence" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 690" role="img" aria-labelledby="dg-pairing-sequence-title dg-pairing-sequence-desc">
@@ -1131,7 +1131,7 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
     <text class="s" x="80" y="53" text-anchor="middle">親機 / ブラウザ</text>
     <rect class="bx red" x="195" y="12" width="150" height="52" rx="8"/>
     <text class="t" x="270" y="34" text-anchor="middle">pair.js</text>
-    <text class="s" x="270" y="53" text-anchor="middle">doorphone-hap</text>
+    <text class="s" x="270" y="53" text-anchor="middle">Doorphone Bridge</text>
     <rect class="bx red" x="395" y="12" width="150" height="52" rx="8"/>
     <text class="t" x="470" y="34" text-anchor="middle">Panasonic クラウド</text>
     <text class="m s" x="470" y="53" text-anchor="middle">intercom.iot-webrtc.net</text>
@@ -1174,7 +1174,7 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
     <text class="ph" x="20" y="597">④ 保存</text>
     <rect class="note" x="35" y="615" width="470" height="40" rx="4"/>
     <text class="s" x="270" y="629" text-anchor="middle">cert.pem / privkey.pem / unit.json を</text>
-    <text class="s" x="270" y="645" text-anchor="middle">/etc/doorphone-hap に書き込み → 再起動</text>
+    <text class="s" x="270" y="645" text-anchor="middle">/etc/doorphone-bridge に書き込み → 再起動</text>
   </svg>
   <figcaption>図 6. ペアリングのシーケンス。</figcaption>
 </figure>
@@ -1182,7 +1182,7 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
 <ol class="steps">
   <li><strong>QR の読み取り</strong>：画像を jsQR で読みます（HEIC は macOS の <code>sips</code> で変換。RPi では JPEG / PNG を使う）。ブラウザから使う場合は Web UI 側でも先に読み取りを試みます。スマホ写真は大きいので、数種類の縮小・中央切り出しを順に試します。</li>
   <li><strong>クラウド登録</strong>：URL 末尾のトークンを HMAC-SHA256 で署名して <code>x-auth-hash</code> ヘッダに入れ、<code>GET /reg/&lt;token&gt;</code> します。
-    HMAC 鍵はアプリに埋め込まれた固定値ですが、リポジトリには含めず <code>/etc/doorphone-hap/hmac.key</code> から読みます（取り出し方は <a href="analysis.html#step2">解析方法</a>）。</li>
+    HMAC 鍵はアプリに埋め込まれた固定値ですが、リポジトリには含めず <code>/etc/doorphone-bridge/hmac.key</code> から読みます（取り出し方は <a href="analysis.html#step2">解析方法</a>）。</li>
   <li><strong>鍵と CSR</strong>：EC P-256 の鍵ペアを作り、CSR を PEM で作ります。Subject はアプリと同じく、区切り無しで連結した 1 つの CN
     （<code>CN=IoT ApplicationOU=Organizational UnitO=OrganizationC=Country</code>）です。</li>
   <li><strong>親機への登録</strong>：clientId を <code>&lt;PeerIdPrefix&gt;-&lt;mobileDeviceId&gt;</code> にして KVS に接続し、<code>Request_Pairing</code> を送ります。
@@ -1224,10 +1224,10 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
     <tr><td><code>accessory.username</code></td><td><code>DC:D0:0F:00:00:01</code></td><td>HAP の識別子（MAC 形式）。他のカメラはこれにオフセットを足す。</td></tr>
     <tr><td><code>accessory.pincode</code></td><td><code>031-45-154</code></td><td>セットアップコード（全カメラ共通）。</td></tr>
     <tr><td><code>accessory.port</code></td><td><code>47129</code></td><td>HAP の TCP ポート。他のカメラはこれにオフセットを足す。</td></tr>
-    <tr><td><code>doorphone.*Path</code></td><td><code>/etc/doorphone-hap/…</code></td><td>クレデンシャル、証明書、秘密鍵、<code>unit.json</code> の場所。</td></tr>
+    <tr><td><code>doorphone.*Path</code></td><td><code>/etc/doorphone-bridge/…</code></td><td>クレデンシャル、証明書、秘密鍵、<code>unit.json</code> の場所。</td></tr>
     <tr><td><code>ffmpeg.path</code></td><td><code>ffmpeg</code></td><td>ffmpeg のパス。</td></tr>
-    <tr><td><code>storage.persistPath</code></td><td><code>/var/lib/doorphone-hap/persist</code></td><td>HAP のペアリング情報。親ディレクトリに録画キャッシュや <code>devices.json</code> も置く。</td></tr>
-    <tr><td><code>storage.nasConfigPath</code></td><td><code>/etc/doorphone-hap/nas.json</code></td><td>NAS 設定。</td></tr>
+    <tr><td><code>storage.persistPath</code></td><td><code>/var/lib/doorphone-bridge/persist</code></td><td>HAP のペアリング情報。親ディレクトリに録画キャッシュや <code>devices.json</code> も置く。</td></tr>
+    <tr><td><code>storage.nasConfigPath</code></td><td><code>/etc/doorphone-bridge/nas.json</code></td><td>NAS 設定。</td></tr>
     <tr><td><code>web.host</code> / <code>web.port</code></td><td><code>0.0.0.0</code> / <code>8080</code></td><td>Web UI。<code>web.enabled: false</code> で無効化。</td></tr>
   </tbody>
 </table>
@@ -1237,13 +1237,13 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
 <table>
   <thead><tr><th>パス</th><th>内容</th></tr></thead>
   <tbody>
-    <tr><td><code>/etc/doorphone-hap/cert.pem</code>, <code>privkey.pem</code></td><td>親機が発行したクライアント証明書と秘密鍵（有効期限 50 年）。</td></tr>
-    <tr><td><code>/etc/doorphone-hap/unit.json</code></td><td><code>unitDeviceId</code>、<code>mobileDeviceId</code>、ペアリング日時など。</td></tr>
-    <tr><td><code>/etc/doorphone-hap/kvs_creds.json</code></td><td>AWS 一時クレデンシャルと <code>channelName</code>。約 10 分ごとに書き換わる。</td></tr>
-    <tr><td><code>/etc/doorphone-hap/hmac.key</code></td><td>ペアリング用の HMAC 鍵（利用者が用意する）。</td></tr>
-    <tr><td><code>/var/lib/doorphone-hap/persist/</code></td><td>HAP-NodeJS のペアリング情報（iPhone 側の公開鍵など）。</td></tr>
-    <tr><td><code>/var/lib/doorphone-hap/devices.json</code></td><td>親機から取得した機器一覧のキャッシュ。</td></tr>
-    <tr><td><code>/var/lib/doorphone-hap/records/</code></td><td>録画のサムネイル・動画キャッシュと <code>nas-state.json</code>。</td></tr>
+    <tr><td><code>/etc/doorphone-bridge/cert.pem</code>, <code>privkey.pem</code></td><td>親機が発行したクライアント証明書と秘密鍵（有効期限 50 年）。</td></tr>
+    <tr><td><code>/etc/doorphone-bridge/unit.json</code></td><td><code>unitDeviceId</code>、<code>mobileDeviceId</code>、ペアリング日時など。</td></tr>
+    <tr><td><code>/etc/doorphone-bridge/kvs_creds.json</code></td><td>AWS 一時クレデンシャルと <code>channelName</code>。約 10 分ごとに書き換わる。</td></tr>
+    <tr><td><code>/etc/doorphone-bridge/hmac.key</code></td><td>ペアリング用の HMAC 鍵（利用者が用意する）。</td></tr>
+    <tr><td><code>/var/lib/doorphone-bridge/persist/</code></td><td>HAP-NodeJS のペアリング情報（iPhone 側の公開鍵など）。</td></tr>
+    <tr><td><code>/var/lib/doorphone-bridge/devices.json</code></td><td>親機から取得した機器一覧のキャッシュ。</td></tr>
+    <tr><td><code>/var/lib/doorphone-bridge/records/</code></td><td>録画のサムネイル・動画キャッシュと <code>nas-state.json</code>。</td></tr>
   </tbody>
 </table>
 
@@ -1252,10 +1252,10 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
 
 <ul>
   <li><code>make deb</code> で、linux/arm64 のコンテナ（Apple <code>container</code> / Docker / Podman を自動選択）の中で <code>npm install</code> し、
-    ネイティブモジュール込みの <code>doorphone-hap_&lt;ver&gt;_arm64.deb</code> を作ります。バージョンは <code>packaging/deb/DEBIAN/control</code> の <code>Version</code> だけで管理します。</li>
-  <li>インストール先は <code>/opt/doorphone-hap</code>。<code>postinst</code> がサービス用ユーザー <code>doorphone-hap</code> を作り、<code>/etc</code> と <code>/var/lib</code> の権限を整えてサービスを有効化します。</li>
-  <li>systemd ユニットは <code>ProtectSystem=strict</code> などで書き込み先を <code>/etc/doorphone-hap</code> と <code>/var/lib/doorphone-hap</code> に限定しています。</li>
-  <li>ログは <code>journalctl -u doorphone-hap -f</code> で見られます。<code>[source camera0]</code> のように、カメラごとに接頭辞が付きます。</li>
+    ネイティブモジュール込みの <code>doorphone-bridge_&lt;ver&gt;_arm64.deb</code> を作ります。バージョンは <code>packaging/deb/DEBIAN/control</code> の <code>Version</code> だけで管理します。</li>
+  <li>インストール先は <code>/opt/doorphone-bridge</code>。<code>postinst</code> がサービス用ユーザー <code>doorphone-bridge</code> を作り、<code>/etc</code> と <code>/var/lib</code> の権限を整えてサービスを有効化します。</li>
+  <li>systemd ユニットは <code>ProtectSystem=strict</code> などで書き込み先を <code>/etc/doorphone-bridge</code> と <code>/var/lib/doorphone-bridge</code> に限定しています。</li>
+  <li>ログは <code>journalctl -u doorphone-bridge -f</code> で見られます。<code>[source camera0]</code> のように、カメラごとに接頭辞が付きます。</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -1280,7 +1280,7 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
   </tbody>
 </table>
 
-<footer class="page">doorphone-hap — <a href="analysis.html">ドアホンの解析方法</a></footer>
+<footer class="page">Doorphone Bridge — <a href="analysis.html">ドアホンの解析方法</a></footer>
 </main>
 </div>
 </body>

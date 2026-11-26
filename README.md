@@ -1,11 +1,11 @@
-# doorphone-hap
+# Doorphone Bridge
 
-Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとして見るためのブリッジ。
+Panasonic VL-X70AHF/AHS（ドアホン親機）を Apple Home の IP カメラとして見るためのブリッジ。
 純正 iOS/Android アプリ「ドアホンコネクト S」を静的解析し、クラウド経由の映像配信フローを
-再実装した Node.js 実装。
+再実装した Node.js 実装。「ドアホンコネクト」（Sがついていない方）のデバイスは対象外。
 
 - Debian arm64 向け `.deb` パッケージを提供（Raspberry Pi 4/5 の 64bit OS で動作確認済み）。
-- 初回ペアリング（QR）とその後のライブ視聴まで、Node で完結（Android アプリは不要）。
+- 初回ペアリング（QR）とその後のライブ視聴まで、Node で完結。
 - HomeKit への追加は Web UI の QR、またはセットアップコード。
 - Web UI で親機 SD の **録画一覧・再生**、および NAS への **自動バックアップ**。
 - 親機に登録された **増設カメラ・2台目以降の玄関子機** もそれぞれ別の HomeKit カメラとして公開（カメラ最大 4 台）。
@@ -25,9 +25,9 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
 - ✅ **NAS バックアップ** — 録画を定期的に CIFS/SMB 共有へコピー（「NAS」タブで設定）。
   strftime の保存PATH・保存日数による自動削除・初回遡り日数に対応（atomcam_tools 相当）
 - ✅ **増設カメラ対応** — 親機の `Request_GetState` で玄関子機 / カメラ一覧を取得し、有効な機器ごとに
-  HomeKit カメラアクセサリを公開（一覧は `/var/lib/doorphone-hap/devices.json` にキャッシュ）。
+  HomeKit カメラアクセサリを公開（一覧は `/var/lib/doorphone-bridge/devices.json` にキャッシュ）。
   親機は同一端末からのライブを 1 本しか張れないため、別のカメラを開くと前のカメラのライブは終了する
-- ✅ systemd ユニット、`.deb` パッケージ、`doorphone-hap pair` CLI
+- ✅ systemd ユニット、`.deb` パッケージ、`doorphone-bridge pair` CLI
 - 🔎 Web UI からの QR ペアリングは実装済み・**実機未検証**（新規端末追加時のみ必要）
 - ❌ 双方向音声・ドアベル通知はscope 外
 - ❌ snapshot は live ストリーム中はキャッシュから返す（ライブ停止中は last-known）
@@ -50,7 +50,7 @@ Panasonic VL-X70AH（ドアホン親機）を Apple Home の IP カメラとし�
                             │   SRTP: H264 (Baseline 42e01f)
                             ▼
     ┌──────────────────────────────────────────────────────────┐
-    │                     doorphone-hap                        │
+    │                     Doorphone Bridge                     │
     │                                                          │
     │  ┌──────────────┐    ┌──────────────────────────────┐    │
     │  │ creds-       │    │ doorphone-source             │    │
@@ -111,7 +111,7 @@ doorphone/
 │   │   ├── App.vue         # タブ: 録画 / NAS / 状態
 │   │   ├── Records.vue     # 録画一覧・再生
 │   │   └── Nas.vue         # NAS バックアップ設定
-│   └── bin/doorphone-hap   # CLI (pair / serve / status)
+│   └── bin/doorphone-bridge   # CLI (pair / serve / status)
 ├── packaging/              # .deb ビルド (Linux arm64 container 内で npm install)
 │   ├── deb/                # Debian パッケージツリー
 │   ├── Containerfile       # linux/arm64 ビルダイメージ
@@ -124,7 +124,7 @@ doorphone/
 │       ├── webrtc_if.proto #   (research/extract_proto.js)。record/profile 等を網羅
 │       ├── record.proto
 │       └── …
-├── doorphone-hap_*.deb     # (gitignore) ビルドされた .deb
+├── doorphone-bridge_*.deb     # (gitignore) ビルドされた .deb
 ├── research/               # リバースエンジニアリング時の検証コード
 │   ├── pair.py             # Python 版 QR/reg
 │   ├── get_kvs_creds.py    # Python 版 creds 取得
@@ -149,7 +149,7 @@ doorphone/
 ### ビルド
 
 ```bash
-make                  # → doorphone-hap_<ver>_arm64.deb
+make                  # → doorphone-bridge_<ver>_arm64.deb
 make clean            # stage/ と .deb を削除
 make image            # イメージだけ再ビルド
 ```
@@ -161,20 +161,20 @@ make image            # イメージだけ再ビルド
 ### デプロイ
 
 ```bash
-scp doorphone-hap_*_arm64.deb user@rpi.local:/tmp/
-ssh user@rpi.local 'sudo apt install -y /tmp/doorphone-hap_*_arm64.deb'
+scp doorphone-bridge_*_arm64.deb user@rpi.local:/tmp/
+ssh user@rpi.local 'sudo apt install -y /tmp/doorphone-bridge_*_arm64.deb'
 ```
 
 ### HMAC 鍵の配置 (初回のみ)
 
 本リポジトリにはドアホン親機の `/reg` エンドポイント認証用の HMAC 鍵が含まれて
 いません。Panasonic アプリから自分で抽出して
-`/etc/doorphone-hap/hmac.key` に置く必要があります:
+`/etc/doorphone-bridge/hmac.key` に置く必要があります:
 
 ```sh
-echo '<APK から抽出した base64 文字列>' | sudo tee /etc/doorphone-hap/hmac.key
-sudo chown doorphone-hap:doorphone-hap /etc/doorphone-hap/hmac.key
-sudo chmod 640 /etc/doorphone-hap/hmac.key
+echo '<APK から抽出した base64 文字列>' | sudo tee /etc/doorphone-bridge/hmac.key
+sudo chown doorphone-bridge:doorphone-bridge /etc/doorphone-bridge/hmac.key
+sudo chmod 640 /etc/doorphone-bridge/hmac.key
 ```
 
 抽出手順は [`research/extract-hmac-key.md`](research/extract-hmac-key.md) 参照。
@@ -186,7 +186,7 @@ HMAC 鍵を置いた後、サービスは「未ペアリング」モードで起
 
 1. ドアホン親機で「スマホ追加」を押して QR を表示
 2. QR 画像を撮影して Web UI にアップロード（または URL 文字列を貼り付け）
-3. Web UI がペアリングを完了し `/etc/doorphone-hap/` に `cert.pem` / `privkey.pem` / `unit.json` を書き込む
+3. Web UI がペアリングを完了し `/etc/doorphone-bridge/` に `cert.pem` / `privkey.pem` / `unit.json` を書き込む
 4. サービスが自動的に KVS WebRTC へ接続、HomeKit mDNS 広告開始
 
 ### HomeKit への追加
@@ -207,15 +207,15 @@ HMAC 鍵を置いた後、サービスは「未ペアリング」モードで起
 ### CLI
 
 ```bash
-sudo doorphone-hap status           # ペアリング状態確認
-sudo doorphone-hap pair qr.jpg      # 画像からペアリング
-sudo doorphone-hap pair https://... # /reg URL 直接指定
-sudo doorphone-hap version
+sudo doorphone-bridge status           # ペアリング状態確認
+sudo doorphone-bridge pair qr.jpg      # 画像からペアリング
+sudo doorphone-bridge pair https://... # /reg URL 直接指定
+sudo doorphone-bridge version
 ```
 
 ## 設定
 
-`/etc/doorphone-hap/config.json`（conffile なのでアップグレードしても保持される）:
+`/etc/doorphone-bridge/config.json`（conffile なのでアップグレードしても保持される）:
 
 ```json
 {
@@ -226,18 +226,18 @@ sudo doorphone-hap version
     "port": 47129                   // HAP の TCP ポート
   },
   "doorphone": {
-    "credsPath":    "/etc/doorphone-hap/kvs_creds.json",
-    "certPath":     "/etc/doorphone-hap/cert.pem",
-    "keyPath":      "/etc/doorphone-hap/privkey.pem",
-    "unitInfoPath": "/etc/doorphone-hap/unit.json",
+    "credsPath":    "/etc/doorphone-bridge/kvs_creds.json",
+    "certPath":     "/etc/doorphone-bridge/cert.pem",
+    "keyPath":      "/etc/doorphone-bridge/privkey.pem",
+    "unitInfoPath": "/etc/doorphone-bridge/unit.json",
     "videoPort": 5004,              // 内部 UDP (今は使っていない)
     "audioPort": 5006
   },
   "ffmpeg":  { "path": "/usr/bin/ffmpeg" },
   "storage": {
-    "persistPath":   "/var/lib/doorphone-hap/persist",
-    "sdpPath":       "/run/doorphone-hap/doorphone.sdp",
-    "nasConfigPath": "/etc/doorphone-hap/nas.json"  // NAS バックアップ設定の保存先
+    "persistPath":   "/var/lib/doorphone-bridge/persist",
+    "sdpPath":       "/run/doorphone-bridge/doorphone.sdp",
+    "nasConfigPath": "/etc/doorphone-bridge/nas.json"  // NAS バックアップ設定の保存先
   },
   "web": { "enabled": true, "host": "0.0.0.0", "port": 8080 }
 }
@@ -262,7 +262,7 @@ NAS録画設定と同等）。
 - **確認の間隔**（既定 60 分）ごとに未コピーの録画を差分アップロード。**初回の遡り日数**
   （既定 7 日）で過去分の一括コピー範囲を制限。
 - **ファイルの自動削除** + **保存日数**で、NAS 上の「自分がコピーしたファイル」を期限超過時に削除。
-- 設定・パスワードは `config.json` とは別の `/etc/doorphone-hap/nas.json`（0600）に保存され、
+- 設定・パスワードは `config.json` とは別の `/etc/doorphone-bridge/nas.json`（0600）に保存され、
   再起動なしで反映される。パスワードは `smbclient` へ一時認証ファイル経由で渡し `ps` に出さない。
 - ライブ視聴中は同期を一時停止し、次回に再試行する。親機が読めない録画（長い手動録画の一部）は
   スキップ → バックオフ（6h→24h）後に再試行 → 3 回失敗で恒久スキップし、全体を止めない。

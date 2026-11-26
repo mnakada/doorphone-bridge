@@ -8,7 +8,7 @@
  * on the command line.
  *
  * Settings live in their own JSON file (cfg.storage.nasConfigPath, default
- * /etc/doorphone-hap/nas.json) so the Web UI can edit them and the password
+ * /etc/doorphone-bridge/nas.json) so the Web UI can edit them and the password
  * stays out of the main config. The file is re-read every run, so changes
  * apply without a restart.
  *

@@ -35,7 +35,7 @@ globalThis.WebSocket = globalThis.WebSocket || require('ws');
 const REGION = 'ap-northeast-1';
 
 function defaultProtoDir() {
-  // Installed: /opt/doorphone-hap/base-rpc.js + /opt/proto/gen
+  // Installed: /opt/doorphone-bridge/base-rpc.js + /opt/proto/gen
   // Repo:      hap/base-rpc.js + proto/gen
   return path.join(__dirname, '..', 'proto', 'gen');
 }

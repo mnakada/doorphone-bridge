@@ -1,4 +1,4 @@
-# Build a Debian arm64 .deb for doorphone-hap inside a linux/arm64 container,
+# Build a Debian arm64 .deb for doorphone-bridge inside a linux/arm64 container,
 # so that `npm install` picks the right native prebuilt binaries and the
 # resulting package is self-contained (no on-target npm).
 #
@@ -23,8 +23,8 @@ CONTAINEROUT := $(PKG)/.container-out
 
 VERSION      := $(shell grep -E '^Version:' $(PKG_SRC)/DEBIAN/control | awk '{print $$2}')
 ARCH         := $(shell grep -E '^Architecture:' $(PKG_SRC)/DEBIAN/control | awk '{print $$2}')
-DEB          := $(ROOT)/doorphone-hap_$(VERSION)_$(ARCH).deb
-IMAGE_TAG    := doorphone-hap/deb-builder:latest
+DEB          := $(ROOT)/doorphone-bridge_$(VERSION)_$(ARCH).deb
+IMAGE_TAG    := doorphone-bridge/deb-builder:latest
 
 # Container runtime auto-detection — override with `RUNTIME=docker make`.
 RUNTIME      ?= $(firstword $(foreach r,container docker podman,$(if $(shell command -v $(r) 2>/dev/null),$(r))))
@@ -40,7 +40,7 @@ else
   PLATFORM_ARG := --platform linux/arm64
 endif
 
-APP_DST      := $(STAGE)/opt/doorphone-hap
+APP_DST      := $(STAGE)/opt/doorphone-bridge
 PROTO_DST    := $(STAGE)/opt/proto
 
 HAP_SRCS     := accessory.js base-rpc.js config.js creds-refresher.js doorphone-source.js \
@@ -81,7 +81,7 @@ stage:
 	cp -a "$(PKG_SRC)/." "$(STAGE)/"
 	@echo "== Copying application sources =="
 	$(foreach f,$(HAP_SRCS),cp -a "$(ROOT)/hap/$(f)" "$(APP_DST)/";)
-	cp -a "$(ROOT)/hap/bin/doorphone-hap" "$(APP_DST)/bin/"
+	cp -a "$(ROOT)/hap/bin/doorphone-bridge" "$(APP_DST)/bin/"
 	cp -a "$(ROOT)/hap/web/." "$(APP_DST)/web/"
 	cp -a "$(ROOT)/proto/." "$(PROTO_DST)/"
 	cp -a "$(PKG)/do-build.sh" "$(SCRIPTS)/do-build.sh"
@@ -92,4 +92,4 @@ stage:
 
 clean:
 	rm -rf "$(STAGE)" "$(CONTAINEROUT)" "$(SCRIPTS)"
-	rm -f "$(ROOT)"/doorphone-hap_*.deb
+	rm -f "$(ROOT)"/doorphone-bridge_*.deb

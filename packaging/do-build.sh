@@ -7,7 +7,7 @@ STAGE=/build/stage
 DEB_OUT=/build/dist/package.deb
 
 echo "[container] installing node_modules for linux/arm64..."
-cd "$STAGE/opt/doorphone-hap"
+cd "$STAGE/opt/doorphone-bridge"
 npm install --omit=dev --no-audit --no-fund --loglevel=error
 
 echo "[container] normalising permissions..."
@@ -16,9 +16,9 @@ cd "$STAGE"
 find . -mindepth 1 -type d -exec chmod 0755 {} +
 find . -mindepth 1 -type f -exec chmod 0644 {} +
 chmod 0755 DEBIAN/postinst DEBIAN/prerm DEBIAN/postrm \
-           usr/bin/doorphone-hap \
-           opt/doorphone-hap/bin/doorphone-hap
-chmod 0640 etc/doorphone-hap/config.json
+           usr/bin/doorphone-bridge \
+           opt/doorphone-bridge/bin/doorphone-bridge
+chmod 0640 etc/doorphone-bridge/config.json
 
 echo "[container] dpkg-deb --build ..."
 dpkg-deb --root-owner-group --build "$STAGE" "$DEB_OUT"

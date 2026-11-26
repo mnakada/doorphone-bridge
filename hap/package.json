@@ -1,5 +1,5 @@
 {
-  "name": "doorphone-hap",
+  "name": "doorphone-bridge",
   "version": "0.0.1",
   "main": "accessory.js",
   "scripts": {

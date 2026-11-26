@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * doorphone-hap — single CLI entry point.
+ * doorphone-bridge — single CLI entry point.
  *
  * Subcommands:
- *   doorphone-hap serve           run the accessory (default — used by systemd)
- *   doorphone-hap pair <qr|url>   register with the base station, store cert
-                                 (requires /etc/doorphone-hap/hmac.key —
+ *   doorphone-bridge serve           run the accessory (default — used by systemd)
+ *   doorphone-bridge pair <qr|url>   register with the base station, store cert
+                                 (requires /etc/doorphone-bridge/hmac.key —
                                   see research/extract-hmac-key.md)
- *   doorphone-hap status          dump current pairing state
- *   doorphone-hap version         print the package version
+ *   doorphone-bridge status          dump current pairing state
+ *   doorphone-bridge version         print the package version
  */
 const path = require('path');
 const fs = require('fs');
@@ -17,14 +17,14 @@ const APP_DIR = fs.realpathSync(path.join(__dirname, '..'));
 
 function usage(code = 1) {
   process.stdout.write([
-    'Usage: doorphone-hap <subcommand> [args]',
+    'Usage: doorphone-bridge <subcommand> [args]',
     '',
     'Subcommands:',
     '  serve                       run the accessory (default)',
     '  pair <qr.jpg|qr.heic|url>   pair with the base station',
-    '    --out DIR                   where to write cert/key/unit (default /etc/doorphone-hap)',
+    '    --out DIR                   where to write cert/key/unit (default /etc/doorphone-bridge)',
     '    --profile-name NAME         display name sent to the base (default "Doorphone Bridge")',
-    '    --hmac-key PATH             HMAC key file (default /etc/doorphone-hap/hmac.key)',
+    '    --hmac-key PATH             HMAC key file (default /etc/doorphone-bridge/hmac.key)',
     '  status                      show pairing status',
     '  version                     print package version',
     '',
@@ -33,16 +33,16 @@ function usage(code = 1) {
 }
 
 function cmdStatus() {
-  const conf = process.env.CONFIG_PATH || '/etc/doorphone-hap/config.json';
+  const conf = process.env.CONFIG_PATH || '/etc/doorphone-bridge/config.json';
   let cfg;
   try { cfg = JSON.parse(fs.readFileSync(conf, 'utf8')); }
-  catch (_) { cfg = { doorphone: { credsPath: '/etc/doorphone-hap/kvs_creds.json' } }; }
-  const dir = path.dirname(cfg.doorphone?.credsPath || '/etc/doorphone-hap/kvs_creds.json');
+  catch (_) { cfg = { doorphone: { credsPath: '/etc/doorphone-bridge/kvs_creds.json' } }; }
+  const dir = path.dirname(cfg.doorphone?.credsPath || '/etc/doorphone-bridge/kvs_creds.json');
   const files = {
     'cert.pem': fs.existsSync(path.join(dir, 'cert.pem')),
     'privkey.pem': fs.existsSync(path.join(dir, 'privkey.pem')),
     'unit.json': fs.existsSync(path.join(dir, 'unit.json')),
-    'kvs_creds.json': fs.existsSync(cfg.doorphone?.credsPath || '/etc/doorphone-hap/kvs_creds.json'),
+    'kvs_creds.json': fs.existsSync(cfg.doorphone?.credsPath || '/etc/doorphone-bridge/kvs_creds.json'),
   };
   console.log('Config file:', conf);
   console.log('Credentials dir:', dir);
@@ -69,7 +69,7 @@ function cmdVersion() {
 async function cmdPair(argv) {
   // Delegate to lib. Inherits CLI arg parsing from pair.js main.
   const { pair } = require(path.join(APP_DIR, 'pair.js'));
-  const args = { out: '/etc/doorphone-hap', profileName: 'Doorphone Bridge', hmacKeyPath: null };
+  const args = { out: '/etc/doorphone-bridge', profileName: 'Doorphone Bridge', hmacKeyPath: null };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -90,7 +90,7 @@ async function cmdPair(argv) {
     console.log('\nPAIRED.');
     console.log(`  unit:    ${info.unitDeviceId}`);
     console.log(`  files:   ${args.out}/{cert.pem, privkey.pem, unit.json}`);
-    console.log('\nNext: sudo systemctl restart doorphone-hap');
+    console.log('\nNext: sudo systemctl restart doorphone-bridge');
   } catch (e) {
     console.error('\nFAILED:', e.message || e);
     process.exit(1);

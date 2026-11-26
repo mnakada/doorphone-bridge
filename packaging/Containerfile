@@ -1,5 +1,5 @@
 # Debian 13 arm64 container used by packaging/build.sh to produce a
-# self-contained doorphone-hap_<ver>_arm64.deb. Running npm install in the
+# self-contained doorphone-bridge_<ver>_arm64.deb. Running npm install in the
 # target OS is the only reliable way to pull the correct *-linux-arm64-*
 # prebuilt binaries for node-datachannel / lightningcss / etc.
 FROM --platform=linux/arm64 debian:trixie-slim
