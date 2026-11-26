@@ -3,14 +3,170 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>ドアホンの解析方法 — doorphone-hap</title>
-<link rel="stylesheet" href="style.css">
+<style>
+/* doorphone-hap documentation — shared styles */
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #59636e;
+  --line: #d1d9e0;
+  --soft: #f6f8fa;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --warn-bg: #fff8c5;
+  --warn-line: #d4a72c;
+  --note-bg: #ddf4ff;
+  --note-line: #54aeff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #9198a1;
+    --line: #3d444d;
+    --soft: #151b23;
+    --accent: #4493f8;
+    --code-bg: #151b23;
+    --warn-bg: #272115;
+    --warn-line: #9e6a03;
+    --note-bg: #121d2f;
+    --note-line: #1f6feb;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 48px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 32px 96px;
+}
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 24px 18px 64px; }
+  nav.toc { position: static; max-height: none; }
+}
+
+nav.toc {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.6;
+}
+nav.toc .home { display: block; font-weight: 600; margin-bottom: 12px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; }
+nav.toc ol ol { padding-left: 14px; }
+nav.toc li { margin: 3px 0; }
+nav.toc a { color: var(--muted); text-decoration: none; }
+nav.toc a:hover { color: var(--accent); }
+
+main { min-width: 0; }
+header.page { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 28px; }
+header.page p.kicker { margin: 0 0 4px; color: var(--muted); font-size: 14px; }
+h1 { font-size: 32px; line-height: 1.3; margin: 0 0 12px; }
+h2 { font-size: 24px; line-height: 1.4; margin: 56px 0 16px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 19px; margin: 32px 0 10px; }
+h4 { font-size: 16px; margin: 24px 0 8px; }
+p, ul, ol, table, pre, figure { margin: 0 0 16px; }
+ul, ol { padding-left: 1.5em; }
+li { margin: 4px 0; }
+a { color: var(--accent); }
+.lead { font-size: 17px; color: var(--muted); max-width: 46em; }
+
+code, pre, kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+:not(pre) > code {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.05em 0.35em;
+  overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  line-height: 1.55;
+}
+
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--soft); white-space: nowrap; }
+
+figure.diagram {
+  margin: 20px 0 28px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+figure.diagram img,
+figure.diagram > svg { display: block; width: 100%; height: auto; }
+figure.diagram figcaption { margin-top: 10px; font-size: 14px; color: var(--muted); }
+
+.callout {
+  border-left: 4px solid var(--note-line);
+  background: var(--note-bg);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 16px;
+  margin: 0 0 16px;
+}
+.callout.warn { border-left-color: var(--warn-line); background: var(--warn-bg); }
+.callout > :last-child { margin-bottom: 0; }
+.callout strong:first-child { display: block; margin-bottom: 2px; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 24px 0; }
+.card {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 20px;
+  color: inherit;
+  text-decoration: none;
+}
+.card:hover { border-color: var(--accent); }
+.card h2 { font-size: 19px; margin: 0 0 6px; border: 0; padding: 0; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+ol.steps > li { counter-increment: step; position: relative; padding-left: 2.4em; margin: 10px 0; }
+ol.steps > li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 0.15em;
+  width: 1.7em; height: 1.7em; border-radius: 50%;
+  background: var(--soft); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 600; line-height: 1.7em; text-align: center;
+}
+
+footer.page { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+</style>
 </head>
 <body>
 <div class="layout">
 
 <nav class="toc" aria-label="目次">
-  <a class="home" href="index.html">← doorphone-hap ドキュメント</a>
+  <a class="home" href="code.html">コードの詳細な説明 →</a>
   <ol>
     <li><a href="#notice">はじめに</a></li>
     <li><a href="#flow">全体の流れ</a></li>
@@ -63,7 +219,95 @@
 <p>大きく「アプリ側を観測できる状態にする」段階（STEP 1〜4）と、「観測結果をもとに Node.js で再実装する」段階（STEP 5〜8）に分かれます。</p>
 
 <figure class="diagram">
-  <img src="img/analysis-roadmap.svg" alt="解析の 8 段階。APK の入手、静的解析、PAIRIP の回避、TLS の中間者化、実機でペアリング、クレデンシャル経路、WebRTC 視聴、HomeKit 化。">
+  <svg id="dg-analysis-roadmap" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 330" role="img" aria-labelledby="dg-analysis-roadmap-title dg-analysis-roadmap-desc">
+    <title id="dg-analysis-roadmap-title">解析の全体の流れ</title>
+    <desc id="dg-analysis-roadmap-desc">APK の入手から HomeKit 化までの 8 段階。上段が準備と観測、下段が再実装。</desc>
+    <style>
+  
+  #dg-analysis-roadmap text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+  #dg-analysis-roadmap .t { font-size: 14px; font-weight: 600; }
+  #dg-analysis-roadmap .n { font-size: 12px; font-weight: 700; fill: #59636e; }
+  #dg-analysis-roadmap .s { font-size: 12px; fill: #59636e; }
+  #dg-analysis-roadmap .h { font-size: 12.5px; font-weight: 700; fill: #59636e; }
+  #dg-analysis-roadmap .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+  #dg-analysis-roadmap .blue { fill: #ddf4ff; stroke: #54aeff; }
+  #dg-analysis-roadmap .green { fill: #dafbe1; stroke: #4ac26b; }
+  #dg-analysis-roadmap .ar { stroke: #59636e; stroke-width: 1.5; fill: none; }
+  #dg-analysis-roadmap .ah { fill: #59636e; }
+  @media (prefers-color-scheme: dark) {
+  #dg-analysis-roadmap text { fill: #e6edf3; }
+  #dg-analysis-roadmap .s, #dg-analysis-roadmap .n, #dg-analysis-roadmap .h { fill: #9198a1; }
+  #dg-analysis-roadmap .bx { fill: #151b23; stroke: #656c76; }
+  #dg-analysis-roadmap .blue { fill: #121d2f; stroke: #1f6feb; }
+  #dg-analysis-roadmap .green { fill: #12261e; stroke: #2ea043; }
+  #dg-analysis-roadmap .ar { stroke: #9198a1; }
+  #dg-analysis-roadmap .ah { fill: #9198a1; }
+  }
+  </style>
+    <defs>
+      <marker id="dg-analysis-roadmap-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+      </marker>
+    </defs>
+  
+    <text class="h" x="20" y="30">準備と観測（Android アプリ側）</text>
+    <rect class="bx blue" x="20" y="44" width="200" height="96" rx="8"/>
+    <text class="n" x="34" y="66">STEP 1</text>
+    <text class="t" x="34" y="88">APK の入手</text>
+    <text class="s" x="34" y="110">apkeep / adb pull</text>
+    <text class="s" x="34" y="128">split APK 一式</text>
+  
+    <rect class="bx blue" x="260" y="44" width="200" height="96" rx="8"/>
+    <text class="n" x="274" y="66">STEP 2</text>
+    <text class="t" x="274" y="88">静的解析</text>
+    <text class="s" x="274" y="110">jadx / apktool</text>
+    <text class="s" x="274" y="128">API・Protobuf・HMAC 鍵</text>
+  
+    <rect class="bx blue" x="500" y="44" width="200" height="96" rx="8"/>
+    <text class="n" x="514" y="66">STEP 3</text>
+    <text class="t" x="514" y="88">PAIRIP の回避</text>
+    <text class="s" x="514" y="110">Application クラスを</text>
+    <text class="s" x="514" y="128">本来のものに戻す</text>
+  
+    <rect class="bx blue" x="740" y="44" width="220" height="96" rx="8"/>
+    <text class="n" x="754" y="66">STEP 4</text>
+    <text class="t" x="754" y="88">TLS の中間者化</text>
+    <text class="s" x="754" y="110">mitmproxy + CA 差し替え</text>
+    <text class="s" x="754" y="128">+ Network Security Config</text>
+  
+    <text class="h" x="20" y="200">再実装（Node.js）</text>
+    <rect class="bx green" x="20" y="214" width="200" height="96" rx="8"/>
+    <text class="n" x="34" y="236">STEP 5</text>
+    <text class="t" x="34" y="258">実機でペアリング</text>
+    <text class="s" x="34" y="280">エミュレータで通信を記録</text>
+    <text class="s" x="34" y="298">証明書と鍵を抽出</text>
+  
+    <rect class="bx green" x="260" y="214" width="200" height="96" rx="8"/>
+    <text class="n" x="274" y="236">STEP 6</text>
+    <text class="t" x="274" y="258">クレデンシャル経路</text>
+    <text class="s" x="274" y="280">AWS IoT MQTT で</text>
+    <text class="s" x="274" y="298">一時鍵を取得</text>
+  
+    <rect class="bx green" x="500" y="214" width="200" height="96" rx="8"/>
+    <text class="n" x="514" y="236">STEP 7</text>
+    <text class="t" x="514" y="258">WebRTC 視聴</text>
+    <text class="s" x="514" y="280">aiortc ✗ → wrtc ✗</text>
+    <text class="s" x="514" y="298">→ node-datachannel ✓</text>
+  
+    <rect class="bx green" x="740" y="214" width="220" height="96" rx="8"/>
+    <text class="n" x="754" y="236">STEP 8</text>
+    <text class="t" x="754" y="258">HomeKit 化</text>
+    <text class="s" x="754" y="280">HAP-NodeJS + ffmpeg</text>
+    <text class="s" x="754" y="298">録画・NAS・増設カメラ</text>
+  
+    <line class="ar" x1="220" y1="92" x2="256" y2="92" marker-end="url(#dg-analysis-roadmap-a)"/>
+    <line class="ar" x1="460" y1="92" x2="496" y2="92" marker-end="url(#dg-analysis-roadmap-a)"/>
+    <line class="ar" x1="700" y1="92" x2="736" y2="92" marker-end="url(#dg-analysis-roadmap-a)"/>
+    <path class="ar" d="M850,140 V172 H180 V210" marker-end="url(#dg-analysis-roadmap-a)"/>
+    <line class="ar" x1="220" y1="262" x2="256" y2="262" marker-end="url(#dg-analysis-roadmap-a)"/>
+    <line class="ar" x1="460" y1="262" x2="496" y2="262" marker-end="url(#dg-analysis-roadmap-a)"/>
+    <line class="ar" x1="700" y1="262" x2="736" y2="262" marker-end="url(#dg-analysis-roadmap-a)"/>
+  </svg>
   <figcaption>図 1. 解析の流れ。上段で通信を「見える」ようにし、下段で 1 つずつ再現していきました。</figcaption>
 </figure>
 
@@ -148,7 +392,68 @@ protobuf-java の生成クラスには、<code>.proto</code> をコンパイル�
 それを取り出せば元の定義を正確に復元できます。</p>
 
 <figure class="diagram">
-  <img src="img/proto-extraction.svg" alt="jadx の出力から記述子の文字列を取り出し、FileDescriptorProto としてデコードし、.proto ソースに戻す流れ。">
+  <svg id="dg-proto-extraction" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 200" role="img" aria-labelledby="dg-proto-extraction-title dg-proto-extraction-desc">
+    <title id="dg-proto-extraction-title">Protobuf 定義の復元</title>
+    <desc id="dg-proto-extraction-desc">jadx が出力した Java ソースに埋め込まれた記述子の文字列から、.proto ファイルを復元する流れ。</desc>
+    <style>
+  
+  #dg-proto-extraction text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+  #dg-proto-extraction .t { font-size: 14px; font-weight: 600; }
+  #dg-proto-extraction .s { font-size: 12px; fill: #59636e; }
+  #dg-proto-extraction .m { font-family: ui-monospace, Menlo, monospace; font-size: 11px; fill: #59636e; }
+  #dg-proto-extraction .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+  #dg-proto-extraction .blue { fill: #ddf4ff; stroke: #54aeff; }
+  #dg-proto-extraction .green { fill: #dafbe1; stroke: #4ac26b; }
+  #dg-proto-extraction .ar { stroke: #59636e; stroke-width: 1.5; fill: none; }
+  #dg-proto-extraction .ah { fill: #59636e; }
+  @media (prefers-color-scheme: dark) {
+  #dg-proto-extraction text { fill: #e6edf3; }
+  #dg-proto-extraction .s, #dg-proto-extraction .m { fill: #9198a1; }
+  #dg-proto-extraction .bx { fill: #151b23; stroke: #656c76; }
+  #dg-proto-extraction .blue { fill: #121d2f; stroke: #1f6feb; }
+  #dg-proto-extraction .green { fill: #12261e; stroke: #2ea043; }
+  #dg-proto-extraction .ar { stroke: #9198a1; }
+  #dg-proto-extraction .ah { fill: #9198a1; }
+  }
+  </style>
+    <defs>
+      <marker id="dg-proto-extraction-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+      </marker>
+    </defs>
+  
+    <rect class="bx blue" x="20" y="20" width="210" height="120" rx="8"/>
+    <text class="t" x="36" y="46">jadx の出力</text>
+    <text class="m" x="36" y="70">webrtc_if/WebrtcIf.java</text>
+    <text class="m" x="36" y="88">call/Call.java …</text>
+    <text class="s" x="36" y="114">protobuf-java の</text>
+    <text class="s" x="36" y="130">生成クラス</text>
+  
+    <rect class="bx" x="270" y="20" width="210" height="120" rx="8"/>
+    <text class="t" x="286" y="46">記述子の文字列</text>
+    <text class="m" x="286" y="70">internalBuildGenerated</text>
+    <text class="m" x="286" y="88">FileFrom(new String[]{…})</text>
+    <text class="s" x="286" y="114">1 文字 = 1 バイト</text>
+    <text class="s" x="286" y="130">（エスケープを解く）</text>
+  
+    <rect class="bx" x="520" y="20" width="210" height="120" rx="8"/>
+    <text class="t" x="536" y="46">FileDescriptorProto</text>
+    <text class="s" x="536" y="70">protobufjs の</text>
+    <text class="m" x="536" y="88">ext/descriptor</text>
+    <text class="s" x="536" y="114">でデコード</text>
+  
+    <rect class="bx green" x="770" y="20" width="190" height="120" rx="8"/>
+    <text class="t" x="786" y="46">.proto ソース</text>
+    <text class="m" x="786" y="70">proto/gen/*.proto</text>
+    <text class="s" x="786" y="96">フィールド番号・型・</text>
+    <text class="s" x="786" y="114">enum が元と完全一致</text>
+  
+    <line class="ar" x1="230" y1="80" x2="266" y2="80" marker-end="url(#dg-proto-extraction-a)"/>
+    <line class="ar" x1="480" y1="80" x2="516" y2="80" marker-end="url(#dg-proto-extraction-a)"/>
+    <line class="ar" x1="730" y1="80" x2="766" y2="80" marker-end="url(#dg-proto-extraction-a)"/>
+  
+    <text class="m" x="20" y="176">node research/extract_proto.js research/jadx-src/sources/webrtc_if/WebrtcIf.java proto/gen</text>
+  </svg>
   <figcaption>図 2. <code>research/extract_proto.js</code> による復元。生成された <code>proto/gen/</code> を実装でもそのまま使っています。</figcaption>
 </figure>
 
@@ -176,7 +481,92 @@ adb install-multiple -r apks/base-aligned.apk apks/split_*.apk</code></pre>
 <p>アプリの HTTPS 通信を mitmproxy で読むには、3 つの防御を<strong>同時に</strong>外す必要があります。1 つずつ試すと、どれか別の経路で必ず TLS が失敗します。</p>
 
 <figure class="diagram">
-  <img src="img/mitm-layers.svg" alt="PAIRIP、独自 HTTPS クライアントの CA 固定、OS 標準 HTTP クライアントの信頼ストア、の 3 つの防御とそれぞれの対処。">
+  <svg id="dg-mitm-layers" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 330" role="img" aria-labelledby="dg-mitm-layers-title dg-mitm-layers-desc">
+    <title id="dg-mitm-layers-title">TLS 中間者化で外す 3 つの防御</title>
+    <desc id="dg-mitm-layers-desc">PAIRIP、独自 HTTPS クライアントの CA ピン止め、OS 標準 HTTP クライアントの信頼ストア。それぞれの症状と対処。</desc>
+    <style>
+  
+  #dg-mitm-layers text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+  #dg-mitm-layers .t { font-size: 14px; font-weight: 600; }
+  #dg-mitm-layers .s { font-size: 12px; fill: #59636e; }
+  #dg-mitm-layers .m { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; fill: #59636e; }
+  #dg-mitm-layers .h { font-size: 12.5px; font-weight: 700; fill: #59636e; }
+  #dg-mitm-layers .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+  #dg-mitm-layers .red { fill: #ffebe9; stroke: #ff8182; }
+  #dg-mitm-layers .green { fill: #dafbe1; stroke: #4ac26b; }
+  #dg-mitm-layers .blue { fill: #ddf4ff; stroke: #54aeff; }
+  #dg-mitm-layers .ar { stroke: #59636e; stroke-width: 1.5; fill: none; }
+  #dg-mitm-layers .ah { fill: #59636e; }
+  @media (prefers-color-scheme: dark) {
+  #dg-mitm-layers text { fill: #e6edf3; }
+  #dg-mitm-layers .s, #dg-mitm-layers .m, #dg-mitm-layers .h { fill: #9198a1; }
+  #dg-mitm-layers .bx { fill: #151b23; stroke: #656c76; }
+  #dg-mitm-layers .red { fill: #2c1517; stroke: #da3633; }
+  #dg-mitm-layers .green { fill: #12261e; stroke: #2ea043; }
+  #dg-mitm-layers .blue { fill: #121d2f; stroke: #1f6feb; }
+  #dg-mitm-layers .ar { stroke: #9198a1; }
+  #dg-mitm-layers .ah { fill: #9198a1; }
+  }
+  </style>
+    <defs>
+      <marker id="dg-mitm-layers-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+      </marker>
+    </defs>
+  
+    <text class="h" x="20" y="28">防御（そのままだと）</text>
+    <text class="h" x="420" y="28">対処（パッチ）</text>
+    <text class="h" x="800" y="28">結果</text>
+  
+    <!-- Row 1 -->
+    <rect class="bx red" x="20" y="42" width="360" height="76" rx="8"/>
+    <text class="t" x="36" y="66">① PAIRIP（Play のライセンス確認）</text>
+    <text class="s" x="36" y="88">Play ストア以外から入れると起動時に</text>
+    <text class="s" x="36" y="106">エラーダイアログで止まる</text>
+    <rect class="bx green" x="420" y="42" width="340" height="76" rx="8"/>
+    <text class="t" x="436" y="66">manifest の application 名を戻す</text>
+    <text class="m" x="436" y="88">com.pairip.application.Application</text>
+    <text class="m" x="436" y="106">→ com.panasonic.newpf.MyApplication</text>
+    <line class="ar" x1="380" y1="80" x2="416" y2="80" marker-end="url(#dg-mitm-layers-a)"/>
+  
+    <!-- Row 2 -->
+    <rect class="bx red" x="20" y="138" width="360" height="76" rx="8"/>
+    <text class="t" x="36" y="162">② 独自 HTTPS クライアントの CA 固定</text>
+    <text class="s" x="36" y="184">res/raw の Amazon Root CA だけを信頼し</text>
+    <text class="s" x="36" y="202">mitmproxy の証明書を拒否</text>
+    <rect class="bx green" x="420" y="138" width="340" height="76" rx="8"/>
+    <text class="t" x="436" y="162">raw の CA ファイルを差し替え</text>
+    <text class="m" x="436" y="184">res/raw/amazon_root_ca_1.pem</text>
+    <text class="s" x="436" y="202">← mitmproxy の CA 証明書で上書き</text>
+    <line class="ar" x1="380" y1="176" x2="416" y2="176" marker-end="url(#dg-mitm-layers-a)"/>
+  
+    <!-- Row 3 -->
+    <rect class="bx red" x="20" y="234" width="360" height="76" rx="8"/>
+    <text class="t" x="36" y="258">③ OS 標準 HTTP クライアント</text>
+    <text class="s" x="36" y="280">Android 7 以降はユーザー追加の CA を</text>
+    <text class="s" x="36" y="298">アプリが信頼しない</text>
+    <rect class="bx green" x="420" y="234" width="340" height="76" rx="8"/>
+    <text class="t" x="436" y="258">Network Security Config を追加</text>
+    <text class="s" x="436" y="280">trust-anchors に system / user /</text>
+    <text class="m" x="436" y="298">@raw/amazon_root_ca_1</text>
+    <line class="ar" x1="380" y1="272" x2="416" y2="272" marker-end="url(#dg-mitm-layers-a)"/>
+  
+    <!-- Result -->
+    <rect class="bx blue" x="800" y="42" width="160" height="268" rx="8"/>
+    <text class="t" x="816" y="70">mitmproxy で</text>
+    <text class="t" x="816" y="90">HTTPS を復号</text>
+    <text class="s" x="816" y="122">3 つを同時に</text>
+    <text class="s" x="816" y="140">当てないと、</text>
+    <text class="s" x="816" y="158">どれか 1 経路で</text>
+    <text class="s" x="816" y="176">必ず TLS が失敗</text>
+    <text class="s" x="816" y="214">副作用:</text>
+    <text class="s" x="816" y="232">再署名で Firebase</text>
+    <text class="s" x="816" y="250">（プッシュ通知）が</text>
+    <text class="s" x="816" y="268">使えなくなる</text>
+    <line class="ar" x1="760" y1="80" x2="796" y2="80" marker-end="url(#dg-mitm-layers-a)"/>
+    <line class="ar" x1="760" y1="176" x2="796" y2="176" marker-end="url(#dg-mitm-layers-a)"/>
+    <line class="ar" x1="760" y1="272" x2="796" y2="272" marker-end="url(#dg-mitm-layers-a)"/>
+  </svg>
   <figcaption>図 3. TLS 中間者化のために当てるパッチ。</figcaption>
 </figure>
 
@@ -371,7 +761,7 @@ node-datachannel のソース（<code>src/cpp/*.cpp</code>）で例外を JavaSc
   </tbody>
 </table>
 
-<footer class="page">doorphone-hap — <a href="index.html">ドキュメント目次</a> · <a href="code.html">コードの詳細な説明</a></footer>
+<footer class="page">doorphone-hap — <a href="code.html">コードの詳細な説明</a></footer>
 </main>
 </div>
 </body>

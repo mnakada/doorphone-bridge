@@ -3,14 +3,170 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>コードの詳細な説明 — doorphone-hap</title>
-<link rel="stylesheet" href="style.css">
+<meta name="color-scheme" content="light dark">
+<title>コードの説明 — doorphone-hap</title>
+<style>
+/* doorphone-hap documentation — shared styles */
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #59636e;
+  --line: #d1d9e0;
+  --soft: #f6f8fa;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --warn-bg: #fff8c5;
+  --warn-line: #d4a72c;
+  --note-bg: #ddf4ff;
+  --note-line: #54aeff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #9198a1;
+    --line: #3d444d;
+    --soft: #151b23;
+    --accent: #4493f8;
+    --code-bg: #151b23;
+    --warn-bg: #272115;
+    --warn-line: #9e6a03;
+    --note-bg: #121d2f;
+    --note-line: #1f6feb;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 48px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 32px 96px;
+}
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 24px 18px 64px; }
+  nav.toc { position: static; max-height: none; }
+}
+
+nav.toc {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.6;
+}
+nav.toc .home { display: block; font-weight: 600; margin-bottom: 12px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; }
+nav.toc ol ol { padding-left: 14px; }
+nav.toc li { margin: 3px 0; }
+nav.toc a { color: var(--muted); text-decoration: none; }
+nav.toc a:hover { color: var(--accent); }
+
+main { min-width: 0; }
+header.page { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 28px; }
+header.page p.kicker { margin: 0 0 4px; color: var(--muted); font-size: 14px; }
+h1 { font-size: 32px; line-height: 1.3; margin: 0 0 12px; }
+h2 { font-size: 24px; line-height: 1.4; margin: 56px 0 16px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 19px; margin: 32px 0 10px; }
+h4 { font-size: 16px; margin: 24px 0 8px; }
+p, ul, ol, table, pre, figure { margin: 0 0 16px; }
+ul, ol { padding-left: 1.5em; }
+li { margin: 4px 0; }
+a { color: var(--accent); }
+.lead { font-size: 17px; color: var(--muted); max-width: 46em; }
+
+code, pre, kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+:not(pre) > code {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.05em 0.35em;
+  overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  line-height: 1.55;
+}
+
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--soft); white-space: nowrap; }
+
+figure.diagram {
+  margin: 20px 0 28px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+figure.diagram img,
+figure.diagram > svg { display: block; width: 100%; height: auto; }
+figure.diagram figcaption { margin-top: 10px; font-size: 14px; color: var(--muted); }
+
+.callout {
+  border-left: 4px solid var(--note-line);
+  background: var(--note-bg);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 16px;
+  margin: 0 0 16px;
+}
+.callout.warn { border-left-color: var(--warn-line); background: var(--warn-bg); }
+.callout > :last-child { margin-bottom: 0; }
+.callout strong:first-child { display: block; margin-bottom: 2px; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 24px 0; }
+.card {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 20px;
+  color: inherit;
+  text-decoration: none;
+}
+.card:hover { border-color: var(--accent); }
+.card h2 { font-size: 19px; margin: 0 0 6px; border: 0; padding: 0; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+ol.steps > li { counter-increment: step; position: relative; padding-left: 2.4em; margin: 10px 0; }
+ol.steps > li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 0.15em;
+  width: 1.7em; height: 1.7em; border-radius: 50%;
+  background: var(--soft); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 600; line-height: 1.7em; text-align: center;
+}
+
+footer.page { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+</style>
 </head>
 <body>
 <div class="layout">
 
 <nav class="toc" aria-label="目次">
-  <a class="home" href="index.html">← doorphone-hap ドキュメント</a>
+  <a class="home" href="analysis.html">ドアホンの解析方法 →</a>
   <ol>
     <li><a href="#overview">1. 全体像</a></li>
     <li><a href="#files">2. ファイル構成</a></li>
@@ -45,7 +201,7 @@
 <main>
 <header class="page">
   <p class="kicker">doorphone-hap ドキュメント</p>
-  <h1>コードの詳細な説明</h1>
+  <h1>コードの説明</h1>
   <p class="lead">Panasonic のドアホン親機 VL-X70AH の映像を Apple Home のカメラとして見せるブリッジ
   <code>hap/</code> の内部構造を、処理の流れに沿って説明します。プロトコルをどう調べたかは
   <a href="analysis.html">ドアホンの解析方法</a>を参照してください。</p>
@@ -59,7 +215,158 @@
 HomeKit Accessory Protocol（HAP）のカメラとして公開します。</p>
 
 <figure class="diagram">
-  <img src="img/architecture.svg" alt="doorphone-hap の全体構成図。左に Apple Home とブラウザ、中央に Raspberry Pi 上のモジュール群、右に親機・NAS・Panasonic クラウド。">
+  <svg id="dg-architecture" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 620" role="img" aria-labelledby="dg-architecture-title dg-architecture-desc">
+    <title id="dg-architecture-title">doorphone-hap 全体構成</title>
+    <desc id="dg-architecture-desc">Raspberry Pi 上の doorphone-hap が、Apple Home・ブラウザ・ドアホン親機・NAS・Panasonic クラウドとどうつながるかを示す構成図。</desc>
+    <style>
+  
+  #dg-architecture text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+  #dg-architecture .t { font-size: 14px; font-weight: 600; }
+  #dg-architecture .s { font-size: 12px; fill: #59636e; }
+  #dg-architecture .m { font-family: ui-monospace, Menlo, monospace; font-size: 11px; fill: #59636e; }
+  #dg-architecture .lbl { font-size: 11px; fill: #59636e; }
+  #dg-architecture .frame { fill: none; stroke: #8c959f; stroke-width: 1.2; stroke-dasharray: 6 4; }
+  #dg-architecture .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+  #dg-architecture .blue { fill: #ddf4ff; stroke: #54aeff; }
+  #dg-architecture .green { fill: #dafbe1; stroke: #4ac26b; }
+  #dg-architecture .yellow { fill: #fff8c5; stroke: #d4a72c; }
+  #dg-architecture .red { fill: #ffebe9; stroke: #ff8182; }
+  #dg-architecture .purple { fill: #fbefff; stroke: #c297ff; }
+  #dg-architecture .ar { stroke: #59636e; stroke-width: 1.4; fill: none; }
+  #dg-architecture .ah { fill: #59636e; }
+  @media (prefers-color-scheme: dark) {
+  #dg-architecture text { fill: #e6edf3; }
+  #dg-architecture .s, #dg-architecture .m, #dg-architecture .lbl { fill: #9198a1; }
+  #dg-architecture .frame { stroke: #656c76; }
+  #dg-architecture .bx { fill: #151b23; stroke: #656c76; }
+  #dg-architecture .blue { fill: #121d2f; stroke: #1f6feb; }
+  #dg-architecture .green { fill: #12261e; stroke: #2ea043; }
+  #dg-architecture .yellow { fill: #272115; stroke: #9e6a03; }
+  #dg-architecture .red { fill: #2c1517; stroke: #da3633; }
+  #dg-architecture .purple { fill: #211830; stroke: #8957e5; }
+  #dg-architecture .ar { stroke: #9198a1; }
+  #dg-architecture .ah { fill: #9198a1; }
+  }
+  </style>
+    <defs>
+      <marker id="dg-architecture-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+      </marker>
+    </defs>
+  
+    <!-- RPi container -->
+    <rect class="frame" x="220" y="20" width="480" height="540" rx="12"/>
+    <text class="t" x="238" y="48">Raspberry Pi — doorphone-hap</text>
+    <text class="s" x="238" y="68">systemd サービス / Node.js（1 プロセス）</text>
+  
+    <!-- Left column (users side) -->
+    <rect class="bx blue" x="240" y="100" width="190" height="64" rx="8"/>
+    <text class="t" x="254" y="126">HAP カメラ ×N</text>
+    <text class="m" x="254" y="148">accessory.js · hap-nodejs</text>
+  
+    <rect class="bx blue" x="240" y="190" width="190" height="64" rx="8"/>
+    <text class="t" x="254" y="216">StreamingDelegate</text>
+    <text class="m" x="254" y="238">streaming.js + ffmpeg</text>
+  
+    <rect class="bx purple" x="240" y="280" width="190" height="64" rx="8"/>
+    <text class="t" x="254" y="306">Web UI（:8080）</text>
+    <text class="m" x="254" y="328">pair-web.js · web/*.vue</text>
+  
+    <rect class="bx" x="240" y="370" width="190" height="64" rx="8"/>
+    <text class="t" x="254" y="396">設定ローダ / CLI</text>
+    <text class="m" x="254" y="418">config.js · bin/</text>
+  
+    <rect class="bx yellow" x="240" y="460" width="190" height="64" rx="8"/>
+    <text class="t" x="254" y="486">設定・状態ファイル</text>
+    <text class="s" x="254" y="508">/etc/doorphone-hap ほか</text>
+  
+    <!-- Right column (base side) -->
+    <rect class="bx green" x="490" y="100" width="190" height="64" rx="8"/>
+    <text class="t" x="504" y="126">DoorphoneSource ×N</text>
+    <text class="m" x="504" y="148">doorphone-source.js</text>
+  
+    <rect class="bx green" x="490" y="190" width="190" height="64" rx="8"/>
+    <text class="t" x="504" y="216">CredsRefresher</text>
+    <text class="m" x="504" y="238">creds-refresher.js</text>
+  
+    <rect class="bx green" x="490" y="280" width="190" height="64" rx="8"/>
+    <text class="t" x="504" y="306">RecordService</text>
+    <text class="m" x="504" y="328">records.js · base-rpc.js</text>
+  
+    <rect class="bx green" x="490" y="370" width="190" height="64" rx="8"/>
+    <text class="t" x="504" y="396">NasSync</text>
+    <text class="m" x="504" y="418">nas-sync.js</text>
+  
+    <rect class="bx red" x="490" y="460" width="190" height="64" rx="8"/>
+    <text class="t" x="504" y="486">ペアリング</text>
+    <text class="m" x="504" y="508">pair.js</text>
+  
+    <!-- External: left -->
+    <rect class="bx blue" x="20" y="100" width="170" height="154" rx="10"/>
+    <text class="t" x="36" y="128">Apple Home</text>
+    <text class="s" x="36" y="150">iPhone / iPad</text>
+    <text class="s" x="36" y="170">Apple TV / HomePod</text>
+    <text class="s" x="36" y="190">（ホームハブ）</text>
+  
+    <rect class="bx purple" x="20" y="280" width="170" height="64" rx="10"/>
+    <text class="t" x="36" y="306">ブラウザ</text>
+    <text class="s" x="36" y="328">PC / スマホ</text>
+  
+    <!-- External: right -->
+    <rect class="bx green" x="800" y="100" width="160" height="244" rx="10"/>
+    <text class="t" x="816" y="128">親機 VL-X70AH</text>
+    <text class="s" x="816" y="152">玄関子機（最大 3）</text>
+    <text class="s" x="816" y="172">増設カメラ（最大 4）</text>
+    <text class="s" x="816" y="192">SD カード録画</text>
+    <text class="s" x="816" y="224">接続の仲介は AWS、</text>
+    <text class="s" x="816" y="244">映像は LAN 内で直結</text>
+  
+    <rect class="bx" x="800" y="370" width="160" height="64" rx="10"/>
+    <text class="t" x="816" y="396">NAS（SMB）</text>
+    <text class="s" x="816" y="418">録画バックアップ</text>
+  
+    <rect class="bx red" x="800" y="460" width="160" height="64" rx="10"/>
+    <text class="t" x="816" y="486">Panasonic クラウド</text>
+    <text class="m" x="816" y="508">/reg/&lt;token&gt;</text>
+  
+    <!-- Arrows: left side -->
+    <line class="ar" x1="194" y1="132" x2="236" y2="132" marker-start="url(#dg-architecture-a)" marker-end="url(#dg-architecture-a)"/>
+    <text class="lbl" x="215" y="124" text-anchor="middle">HAP</text>
+    <line class="ar" x1="240" y1="222" x2="194" y2="222" marker-end="url(#dg-architecture-a)"/>
+    <text class="lbl" x="215" y="214" text-anchor="middle">SRTP</text>
+    <line class="ar" x1="194" y1="312" x2="236" y2="312" marker-start="url(#dg-architecture-a)" marker-end="url(#dg-architecture-a)"/>
+    <text class="lbl" x="215" y="304" text-anchor="middle">HTTP</text>
+  
+    <!-- Arrows: internal -->
+    <line class="ar" x1="490" y1="152" x2="434" y2="200" marker-end="url(#dg-architecture-a)"/>
+    <text class="lbl" x="461" y="182" text-anchor="middle">H264 / PCMU</text>
+    <line class="ar" x1="434" y1="312" x2="486" y2="312" marker-end="url(#dg-architecture-a)"/>
+    <line class="ar" x1="585" y1="344" x2="585" y2="366" marker-end="url(#dg-architecture-a)"/>
+  
+    <!-- Arrows: right side -->
+    <line class="ar" x1="680" y1="132" x2="796" y2="132" marker-start="url(#dg-architecture-a)" marker-end="url(#dg-architecture-a)"/>
+    <text class="lbl" x="740" y="124" text-anchor="middle">WebRTC（KVS）</text>
+    <line class="ar" x1="680" y1="222" x2="796" y2="222" marker-start="url(#dg-architecture-a)" marker-end="url(#dg-architecture-a)"/>
+    <text class="lbl" x="740" y="214" text-anchor="middle">MQTT（AWS IoT）</text>
+    <line class="ar" x1="680" y1="312" x2="796" y2="312" marker-start="url(#dg-architecture-a)" marker-end="url(#dg-architecture-a)"/>
+    <text class="lbl" x="740" y="304" text-anchor="middle">WebRTC DC</text>
+    <line class="ar" x1="680" y1="402" x2="796" y2="402" marker-end="url(#dg-architecture-a)"/>
+    <text class="lbl" x="740" y="394" text-anchor="middle">smbclient</text>
+    <line class="ar" x1="680" y1="492" x2="796" y2="492" marker-end="url(#dg-architecture-a)"/>
+    <text class="lbl" x="740" y="484" text-anchor="middle">HTTPS + HMAC</text>
+  
+    <!-- Legend -->
+    <rect class="bx blue" x="220" y="584" width="14" height="14" rx="3"/>
+    <text class="s" x="240" y="596">HomeKit 配信</text>
+    <rect class="bx green" x="340" y="584" width="14" height="14" rx="3"/>
+    <text class="s" x="360" y="596">親機との通信</text>
+    <rect class="bx purple" x="460" y="584" width="14" height="14" rx="3"/>
+    <text class="s" x="480" y="596">Web UI</text>
+    <rect class="bx red" x="550" y="584" width="14" height="14" rx="3"/>
+    <text class="s" x="570" y="596">ペアリング（初回のみ）</text>
+    <rect class="bx yellow" x="720" y="584" width="14" height="14" rx="3"/>
+    <text class="s" x="740" y="596">ファイル</text>
+  </svg>
   <figcaption>図 1. 全体構成。中央の枠内が <code>hap/</code> のモジュールで、右列が親機側、左列が利用者側との通信を受け持ちます。</figcaption>
 </figure>
 
@@ -126,7 +433,89 @@ Web UI から再ペアリングに成功すると、新しい証明書で起動�
 AWS IoT Core の MQTT 経由で親機に定期的に発行してもらいます。</p>
 
 <figure class="diagram">
-  <img src="img/creds-sequence.svg" alt="CredsRefresher が AWS IoT Core を介して親機に GET_SIGNALING_CHANNEL を送り、NOTIFY_KVS_CREDENTIAL を受け取るシーケンス図。">
+  <svg id="dg-creds-sequence" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 414" role="img" aria-labelledby="dg-creds-sequence-title dg-creds-sequence-desc">
+    <title id="dg-creds-sequence-title">クレデンシャル更新のシーケンス</title>
+    <desc id="dg-creds-sequence-desc">ペアリング後、クライアント証明書だけで AWS 一時クレデンシャルを取り続ける流れ。</desc>
+    <style>
+  
+  #dg-creds-sequence text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+  #dg-creds-sequence .t { font-size: 14px; font-weight: 600; }
+  #dg-creds-sequence .s { font-size: 11.5px; fill: #59636e; }
+  #dg-creds-sequence .msg { font-size: 12.5px; }
+  #dg-creds-sequence .m { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  #dg-creds-sequence .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+  #dg-creds-sequence .blue { fill: #ddf4ff; stroke: #54aeff; }
+  #dg-creds-sequence .green { fill: #dafbe1; stroke: #4ac26b; }
+  #dg-creds-sequence .yellow { fill: #fff8c5; stroke: #d4a72c; }
+  #dg-creds-sequence .red { fill: #ffebe9; stroke: #ff8182; }
+  #dg-creds-sequence .purple { fill: #fbefff; stroke: #c297ff; }
+  #dg-creds-sequence .life { stroke: #8c959f; stroke-width: 1; stroke-dasharray: 4 4; }
+  #dg-creds-sequence .ar { stroke: #59636e; stroke-width: 1.4; fill: none; }
+  #dg-creds-sequence .ar.media { stroke: #1a7f37; stroke-width: 2.2; }
+  #dg-creds-sequence .ar.ret { stroke-dasharray: 5 3; }
+  #dg-creds-sequence .ah { fill: #59636e; }
+  #dg-creds-sequence .ahg { fill: #1a7f37; }
+  #dg-creds-sequence .note { fill: #fff8c5; stroke: #d4a72c; stroke-width: 1; }
+  #dg-creds-sequence .phase { fill: #f6f8fa; }
+  #dg-creds-sequence .ph { font-size: 11.5px; font-weight: 600; fill: #59636e; }
+  @media (prefers-color-scheme: dark) {
+  #dg-creds-sequence text { fill: #e6edf3; }
+  #dg-creds-sequence .s, #dg-creds-sequence .ph { fill: #9198a1; }
+  #dg-creds-sequence .bx { fill: #151b23; stroke: #656c76; }
+  #dg-creds-sequence .blue { fill: #121d2f; stroke: #1f6feb; }
+  #dg-creds-sequence .green { fill: #12261e; stroke: #2ea043; }
+  #dg-creds-sequence .yellow { fill: #272115; stroke: #9e6a03; }
+  #dg-creds-sequence .red { fill: #2c1517; stroke: #da3633; }
+  #dg-creds-sequence .purple { fill: #211830; stroke: #8957e5; }
+  #dg-creds-sequence .life { stroke: #656c76; }
+  #dg-creds-sequence .ar { stroke: #9198a1; }
+  #dg-creds-sequence .ar.media { stroke: #3fb950; }
+  #dg-creds-sequence .ah { fill: #9198a1; }
+  #dg-creds-sequence .ahg { fill: #3fb950; }
+  #dg-creds-sequence .note { fill: #272115; stroke: #9e6a03; }
+  #dg-creds-sequence .phase { fill: #151b23; }
+  }
+  </style>
+    <defs>
+      <marker id="dg-creds-sequence-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+      </marker>
+      <marker id="dg-creds-sequence-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ahg"/>
+      </marker>
+    </defs>
+  
+    <line class="life" x1="110" y1="64" x2="110" y2="408"/>
+    <line class="life" x1="420" y1="64" x2="420" y2="408"/>
+    <line class="life" x1="730" y1="64" x2="730" y2="408"/>
+    <rect class="bx green" x="15" y="12" width="190" height="52" rx="8"/>
+    <text class="t" x="110" y="34" text-anchor="middle">CredsRefresher</text>
+    <text class="m s" x="110" y="53" text-anchor="middle">creds-refresher.js</text>
+    <rect class="bx " x="325" y="12" width="190" height="52" rx="8"/>
+    <text class="t" x="420" y="34" text-anchor="middle">AWS IoT Core</text>
+    <text class="s" x="420" y="53" text-anchor="middle">MQTT ブローカ</text>
+    <rect class="bx green" x="635" y="12" width="190" height="52" rx="8"/>
+    <text class="t" x="730" y="34" text-anchor="middle">親機</text>
+    <text class="s" x="730" y="53" text-anchor="middle">VL-X70AH</text>
+    <line class="ar" x1="110" y1="96" x2="416" y2="96" marker-end="url(#dg-creds-sequence-a)"/>
+    <text class="msg" x="265" y="90" text-anchor="middle">MQTT 接続（mTLS: cert.pem / privkey.pem）</text>
+    <line class="ar" x1="110" y1="130" x2="416" y2="130" marker-end="url(#dg-creds-sequence-a)"/>
+    <text class="msg m" x="265" y="124" text-anchor="middle">SUBSCRIBE doorphone/comm/&lt;unitId&gt;</text>
+    <line class="ar" x1="110" y1="164" x2="416" y2="164" marker-end="url(#dg-creds-sequence-a)"/>
+    <text class="msg m" x="265" y="158" text-anchor="middle">PUBLISH {command: GET_SIGNALING_CHANNEL}</text>
+    <line class="ar" x1="420" y1="198" x2="726" y2="198" marker-end="url(#dg-creds-sequence-a)"/>
+    <text class="msg" x="575" y="192" text-anchor="middle">同じトピックを購読している親機へ配送</text>
+    <line class="ar ret" x1="730" y1="232" x2="424" y2="232" marker-end="url(#dg-creds-sequence-a)"/>
+    <text class="msg m" x="575" y="226" text-anchor="middle">NOTIFY_KVS_CREDENTIAL{AccessKeyId, …, channelName}</text>
+    <line class="ar ret" x1="420" y1="266" x2="114" y2="266" marker-end="url(#dg-creds-sequence-a)"/>
+    <text class="msg" x="265" y="260" text-anchor="middle">配送（to が自分宛てのものだけ処理）</text>
+    <rect class="note" x="50" y="287" width="430" height="40" rx="4"/>
+    <text class="s" x="265" y="301" text-anchor="middle">kvs_creds.json に保存（有効期限 約 10 分）</text>
+    <text class="s" x="265" y="317" text-anchor="middle">期限 2 分前と 60 秒ごとに再要求</text>
+    <rect class="note" x="50" y="339" width="430" height="40" rx="4"/>
+    <text class="s" x="265" y="353" text-anchor="middle">{error: NOT_REGISTERED} や 3 回連続の無応答 →</text>
+    <text class="s" x="265" y="369" text-anchor="middle">親機側で登録解除されたと判断し証明書を退避</text>
+  </svg>
   <figcaption>図 2. クレデンシャル更新。親機とブリッジは同じ MQTT トピックを購読していて、宛先（<code>to</code>）で自分宛てか判断します。</figcaption>
 </figure>
 
@@ -154,7 +543,131 @@ Web UI を「未ペアリング」表示に戻します。Web UI を開いたと
 <code>device = DEVICE_DOOR(1)</code>、増設カメラなら <code>DEVICE_CAMERA(2)</code> で、<code>devno</code> は 0 始まりの番号です。</p>
 
 <figure class="diagram">
-  <img src="img/live-sequence.svg" alt="Apple Home でカメラを開いてから、KVS シグナリング、P2P 接続、Request_Connect、映像配信、終了までのシーケンス図。">
+  <svg id="dg-live-sequence" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 970 994" role="img" aria-labelledby="dg-live-sequence-title dg-live-sequence-desc">
+    <title id="dg-live-sequence-title">ライブ視聴のシーケンス</title>
+    <desc id="dg-live-sequence-desc">Apple Home でカメラを開いてから映像が届き、閉じて切断されるまでのメッセージの流れ。</desc>
+    <style>
+  
+  #dg-live-sequence text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+  #dg-live-sequence .t { font-size: 14px; font-weight: 600; }
+  #dg-live-sequence .s { font-size: 11.5px; fill: #59636e; }
+  #dg-live-sequence .msg { font-size: 12.5px; }
+  #dg-live-sequence .m { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  #dg-live-sequence .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+  #dg-live-sequence .blue { fill: #ddf4ff; stroke: #54aeff; }
+  #dg-live-sequence .green { fill: #dafbe1; stroke: #4ac26b; }
+  #dg-live-sequence .yellow { fill: #fff8c5; stroke: #d4a72c; }
+  #dg-live-sequence .red { fill: #ffebe9; stroke: #ff8182; }
+  #dg-live-sequence .purple { fill: #fbefff; stroke: #c297ff; }
+  #dg-live-sequence .life { stroke: #8c959f; stroke-width: 1; stroke-dasharray: 4 4; }
+  #dg-live-sequence .ar { stroke: #59636e; stroke-width: 1.4; fill: none; }
+  #dg-live-sequence .ar.media { stroke: #1a7f37; stroke-width: 2.2; }
+  #dg-live-sequence .ar.ret { stroke-dasharray: 5 3; }
+  #dg-live-sequence .ah { fill: #59636e; }
+  #dg-live-sequence .ahg { fill: #1a7f37; }
+  #dg-live-sequence .note { fill: #fff8c5; stroke: #d4a72c; stroke-width: 1; }
+  #dg-live-sequence .phase { fill: #f6f8fa; }
+  #dg-live-sequence .ph { font-size: 11.5px; font-weight: 600; fill: #59636e; }
+  @media (prefers-color-scheme: dark) {
+  #dg-live-sequence text { fill: #e6edf3; }
+  #dg-live-sequence .s, #dg-live-sequence .ph { fill: #9198a1; }
+  #dg-live-sequence .bx { fill: #151b23; stroke: #656c76; }
+  #dg-live-sequence .blue { fill: #121d2f; stroke: #1f6feb; }
+  #dg-live-sequence .green { fill: #12261e; stroke: #2ea043; }
+  #dg-live-sequence .yellow { fill: #272115; stroke: #9e6a03; }
+  #dg-live-sequence .red { fill: #2c1517; stroke: #da3633; }
+  #dg-live-sequence .purple { fill: #211830; stroke: #8957e5; }
+  #dg-live-sequence .life { stroke: #656c76; }
+  #dg-live-sequence .ar { stroke: #9198a1; }
+  #dg-live-sequence .ar.media { stroke: #3fb950; }
+  #dg-live-sequence .ah { fill: #9198a1; }
+  #dg-live-sequence .ahg { fill: #3fb950; }
+  #dg-live-sequence .note { fill: #272115; stroke: #9e6a03; }
+  #dg-live-sequence .phase { fill: #151b23; }
+  }
+  </style>
+    <defs>
+      <marker id="dg-live-sequence-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+      </marker>
+      <marker id="dg-live-sequence-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ahg"/>
+      </marker>
+    </defs>
+  
+    <line class="life" x1="90" y1="64" x2="90" y2="988"/>
+    <line class="life" x1="290" y1="64" x2="290" y2="988"/>
+    <line class="life" x1="500" y1="64" x2="500" y2="988"/>
+    <line class="life" x1="700" y1="64" x2="700" y2="988"/>
+    <line class="life" x1="880" y1="64" x2="880" y2="988"/>
+    <rect class="bx blue" x="15" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="90" y="34" text-anchor="middle">Apple Home</text>
+    <text class="s" x="90" y="53" text-anchor="middle">iPhone など</text>
+    <rect class="bx blue" x="215" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="290" y="34" text-anchor="middle">StreamingDelegate</text>
+    <text class="m s" x="290" y="53" text-anchor="middle">streaming.js</text>
+    <rect class="bx green" x="425" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="500" y="34" text-anchor="middle">DoorphoneSource</text>
+    <text class="m s" x="500" y="53" text-anchor="middle">doorphone-source.js</text>
+    <rect class="bx " x="625" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="700" y="34" text-anchor="middle">AWS KVS</text>
+    <text class="s" x="700" y="53" text-anchor="middle">シグナリング</text>
+    <rect class="bx green" x="805" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="880" y="34" text-anchor="middle">親機</text>
+    <text class="s" x="880" y="53" text-anchor="middle">VL-X70AH</text>
+    <rect class="phase" x="10" y="84" width="950" height="22" rx="4"/>
+    <text class="ph" x="20" y="99">① HomeKit のストリーム開始</text>
+    <line class="ar" x1="90" y1="130" x2="286" y2="130" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="190" y="124" text-anchor="middle">prepareStream（SRTP 鍵・ポート交換）</text>
+    <line class="ar" x1="90" y1="164" x2="286" y2="164" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="190" y="158" text-anchor="middle">startStream（解像度・コーデック決定）</text>
+    <rect class="note" x="174" y="185" width="232" height="40" rx="4"/>
+    <text class="s" x="290" y="199" text-anchor="middle">ffmpeg を 2 本起動</text>
+    <text class="s" x="290" y="215" text-anchor="middle">映像 copy / 音声 Opus</text>
+    <line class="ar" x1="290" y1="250" x2="496" y2="250" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="395" y="244" text-anchor="middle">acquire(hk:&lt;session&gt;)</text>
+    <rect class="note" x="340" y="271" width="320" height="40" rx="4"/>
+    <text class="s" x="500" y="285" text-anchor="middle">beforeStart: 録画セッションを解放</text>
+    <text class="s" x="500" y="301" text-anchor="middle">他カメラの source を preempt()</text>
+    <rect class="phase" x="10" y="324" width="950" height="22" rx="4"/>
+    <text class="ph" x="20" y="339">② KVS シグナリング（kvs_creds.json の一時クレデンシャルで署名）</text>
+    <line class="ar" x1="500" y1="370" x2="696" y2="370" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="600" y="364" text-anchor="middle">Describe / GetEndpoint / GetIceServerConfig</text>
+    <line class="ar" x1="500" y1="404" x2="696" y2="404" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="600" y="398" text-anchor="middle">WSS 接続 → SDP offer + ICE candidate</text>
+    <line class="ar" x1="700" y1="438" x2="876" y2="438" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="790" y="432" text-anchor="middle">offer を転送</text>
+    <line class="ar ret" x1="880" y1="472" x2="504" y2="472" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="690" y="466" text-anchor="middle">SDP answer + ICE candidate（KVS 経由）</text>
+    <rect class="phase" x="10" y="494" width="950" height="22" rx="4"/>
+    <text class="ph" x="20" y="509">③ P2P 接続（LAN 内ならホスト候補で直結）</text>
+    <line class="ar" x1="504" y1="540" x2="876" y2="540" marker-start="url(#dg-live-sequence-a)" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="690" y="534" text-anchor="middle">ICE → DTLS → SRTP / SCTP 確立</text>
+    <line class="ar" x1="880" y1="574" x2="504" y2="574" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="690" y="568" text-anchor="middle">DataChannel「MasterToViewer」を開く</text>
+    <line class="ar" x1="500" y1="608" x2="876" y2="608" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg m" x="690" y="602" text-anchor="middle">Request_Connect(device, devno, MONITOR)</text>
+    <line class="ar ret" x1="880" y1="642" x2="504" y2="642" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg m" x="690" y="636" text-anchor="middle">Response_Connect(result=true)</text>
+    <rect class="phase" x="10" y="664" width="950" height="22" rx="4"/>
+    <text class="ph" x="20" y="679">④ 映像・音声</text>
+    <line class="ar media" x1="880" y1="710" x2="504" y2="710" marker-end="url(#dg-live-sequence-g)"/>
+    <text class="msg" x="690" y="704" text-anchor="middle">H264（pt 101）+ PCMU の RTP</text>
+    <line class="ar media" x1="500" y1="744" x2="294" y2="744" marker-end="url(#dg-live-sequence-g)"/>
+    <text class="msg" x="395" y="738" text-anchor="middle">H264 NAL（Annex-B）/ PCMU を stdin へ</text>
+    <line class="ar media" x1="290" y1="778" x2="94" y2="778" marker-end="url(#dg-live-sequence-g)"/>
+    <text class="msg" x="190" y="772" text-anchor="middle">SRTP: H264 そのまま + Opus 16 kHz</text>
+    <rect class="phase" x="10" y="800" width="950" height="22" rx="4"/>
+    <text class="ph" x="20" y="815">⑤ 終了</text>
+    <line class="ar" x1="90" y1="846" x2="286" y2="846" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="190" y="840" text-anchor="middle">stopStream</text>
+    <line class="ar" x1="290" y1="880" x2="496" y2="880" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="395" y="874" text-anchor="middle">release()</text>
+    <rect class="note" x="359" y="901" width="282" height="24" rx="4"/>
+    <text class="s" x="500" y="915" text-anchor="middle">15 秒の猶予（すぐ再開されることが多い）</text>
+    <line class="ar" x1="500" y1="950" x2="876" y2="950" marker-end="url(#dg-live-sequence-a)"/>
+    <text class="msg" x="690" y="944" text-anchor="middle">Request_Disconnect → PeerConnection を閉じる</text>
+  </svg>
   <figcaption>図 3. ライブ視聴のシーケンス。② のシグナリングは AWS を経由しますが、③ 以降の映像は LAN 内で直結することが多いです。</figcaption>
 </figure>
 
@@ -255,7 +768,76 @@ camera.cameras = [{enable: true, name: "カメラ1"}, {}, {}, {}]
 <p>同じ clientId で 2 本のセッションを張ると、親機は両方を交互に切断します。そこで「後から開いたカメラが勝つ」方式で排他します。</p>
 
 <figure class="diagram">
-  <img src="img/camera-switch.svg" alt="玄関子機の視聴中にカメラ1 を開いたときのタイムライン。door0 が切断されてから camera0 が接続する。">
+  <svg id="dg-camera-switch" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 290" role="img" aria-labelledby="dg-camera-switch-title dg-camera-switch-desc">
+    <title id="dg-camera-switch-title">カメラ切り替え時のセッションの受け渡し</title>
+    <desc id="dg-camera-switch-desc">玄関子機を見ている途中でカメラ1 を開くと、玄関子機のセッションを閉じてからカメラ1 が接続する。</desc>
+    <style>
+  
+  #dg-camera-switch text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+  #dg-camera-switch .t { font-size: 13px; font-weight: 600; }
+  #dg-camera-switch .s { font-size: 11.5px; fill: #59636e; }
+  #dg-camera-switch .w { font-size: 11.5px; font-weight: 600; fill: #1f2328; }
+  #dg-camera-switch .lane { fill: #f6f8fa; }
+  #dg-camera-switch .blue { fill: #b6e3ff; }
+  #dg-camera-switch .green { fill: #8ddb8c; }
+  #dg-camera-switch .conn { fill: #dafbe1; stroke: #4ac26b; stroke-dasharray: 4 3; }
+  #dg-camera-switch .grace { fill: #eaeef2; stroke: #8c959f; stroke-dasharray: 4 3; }
+  #dg-camera-switch .ev { stroke: #cf222e; stroke-width: 1.5; stroke-dasharray: 5 4; }
+  #dg-camera-switch .evt { font-size: 11.5px; font-weight: 600; fill: #cf222e; }
+  #dg-camera-switch .axis { stroke: #8c959f; stroke-width: 1; }
+  @media (prefers-color-scheme: dark) {
+  #dg-camera-switch text, #dg-camera-switch .w { fill: #e6edf3; }
+  #dg-camera-switch .s { fill: #9198a1; }
+  #dg-camera-switch .lane { fill: #151b23; }
+  #dg-camera-switch .blue { fill: #1f6feb; }
+  #dg-camera-switch .green { fill: #2ea043; }
+  #dg-camera-switch .conn { fill: #12261e; stroke: #2ea043; }
+  #dg-camera-switch .grace { fill: #262c36; stroke: #656c76; }
+  #dg-camera-switch .ev { stroke: #f85149; }
+  #dg-camera-switch .evt { fill: #f85149; }
+  #dg-camera-switch .axis { stroke: #656c76; }
+  }
+  </style>
+  
+    <!-- lanes -->
+    <rect class="lane" x="20" y="40" width="940" height="40" rx="6"/>
+    <rect class="lane" x="20" y="90" width="940" height="40" rx="6"/>
+    <rect class="lane" x="20" y="150" width="940" height="40" rx="6"/>
+    <rect class="lane" x="20" y="200" width="940" height="40" rx="6"/>
+    <text class="t" x="32" y="65">Home: 玄関子機</text>
+    <text class="t" x="32" y="115">Home: カメラ1</text>
+    <text class="t" x="32" y="175">source door0</text>
+    <text class="t" x="32" y="225">source camera0</text>
+  
+    <!-- Home streams -->
+    <rect class="blue" x="200" y="48" width="320" height="24" rx="4"/>
+    <text class="w" x="212" y="65">ライブ視聴中</text>
+    <rect class="blue" x="520" y="98" width="420" height="24" rx="4"/>
+    <text class="w" x="532" y="115">ライブ視聴（映像は接続後から）</text>
+  
+    <!-- door0 source -->
+    <rect class="conn" x="180" y="158" width="40" height="24" rx="4"/>
+    <rect class="green" x="220" y="158" width="300" height="24" rx="4"/>
+    <text class="w" x="232" y="175">接続中（映像受信）</text>
+    <rect class="grace" x="520" y="158" width="40" height="24" rx="4"/>
+    <text class="s" x="568" y="175">Request_Disconnect → 切断</text>
+  
+    <!-- camera0 source -->
+    <rect class="grace" x="520" y="208" width="40" height="24" rx="4"/>
+    <rect class="conn" x="560" y="208" width="80" height="24" rx="4"/>
+    <rect class="green" x="640" y="208" width="300" height="24" rx="4"/>
+    <text class="w" x="652" y="225">接続中（映像受信）</text>
+    <text class="s" x="566" y="225">接続処理</text>
+  
+    <!-- event -->
+    <line class="ev" x1="520" y1="30" x2="520" y2="250"/>
+    <text class="evt" x="526" y="24">カメラ1 を開く</text>
+    <text class="s" x="20" y="270">① camera0 の acquire() → beforeStart で door0.preempt()　② door0 は 'preempted' を通知し、玄関子機の HomeKit ストリームを強制終了</text>
+    <text class="s" x="20" y="286">③ door0 が Request_Disconnect を送って閉じるのを待ってから（約 1 秒）camera0 が KVS シグナリングを開始</text>
+  
+    <line class="axis" x1="180" y1="140" x2="940" y2="140"/>
+    <text class="s" x="936" y="136" text-anchor="end">時間 →</text>
+  </svg>
   <figcaption>図 4. カメラ切り替え。各 source の <code>beforeStart</code> が、他の source の <code>preempt()</code> を待ってから接続を始めます。</figcaption>
 </figure>
 
@@ -270,7 +852,143 @@ camera.cameras = [{enable: true, name: "カメラ1"}, {}, {}, {}]
 同時ストリーム数は 1 です（<code>cameraStreamCount: 1</code>）。</p>
 
 <figure class="diagram">
-  <img src="img/media-pipeline.svg" alt="映像、スナップショット、音声の 3 つの処理経路を示す図。">
+  <svg id="dg-media-pipeline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 450" role="img" aria-labelledby="dg-media-pipeline-title dg-media-pipeline-desc">
+    <title id="dg-media-pipeline-title">映像・音声・スナップショットの処理パイプライン</title>
+    <desc id="dg-media-pipeline-desc">親機から届いた H264 と PCMU が、depacketize・ffmpeg・SRTP を経て iPhone に届くまでの処理段。</desc>
+    <style>
+  
+  #dg-media-pipeline text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+  #dg-media-pipeline .t { font-size: 13.5px; font-weight: 600; }
+  #dg-media-pipeline .s { font-size: 11.5px; fill: #59636e; }
+  #dg-media-pipeline .m { font-family: ui-monospace, Menlo, monospace; font-size: 11px; fill: #59636e; }
+  #dg-media-pipeline .h { font-size: 12.5px; font-weight: 700; fill: #59636e; }
+  #dg-media-pipeline .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+  #dg-media-pipeline .blue { fill: #ddf4ff; stroke: #54aeff; }
+  #dg-media-pipeline .green { fill: #dafbe1; stroke: #4ac26b; }
+  #dg-media-pipeline .yellow { fill: #fff8c5; stroke: #d4a72c; }
+  #dg-media-pipeline .ar { stroke: #59636e; stroke-width: 1.5; fill: none; }
+  #dg-media-pipeline .ah { fill: #59636e; }
+  #dg-media-pipeline .sep { stroke: #d1d9e0; stroke-width: 1; }
+  @media (prefers-color-scheme: dark) {
+  #dg-media-pipeline text { fill: #e6edf3; }
+  #dg-media-pipeline .s, #dg-media-pipeline .m, #dg-media-pipeline .h { fill: #9198a1; }
+  #dg-media-pipeline .bx { fill: #151b23; stroke: #656c76; }
+  #dg-media-pipeline .blue { fill: #121d2f; stroke: #1f6feb; }
+  #dg-media-pipeline .green { fill: #12261e; stroke: #2ea043; }
+  #dg-media-pipeline .yellow { fill: #272115; stroke: #9e6a03; }
+  #dg-media-pipeline .ar { stroke: #9198a1; }
+  #dg-media-pipeline .ah { fill: #9198a1; }
+  #dg-media-pipeline .sep { stroke: #3d444d; }
+  }
+  </style>
+    <defs>
+      <marker id="dg-media-pipeline-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+      </marker>
+    </defs>
+  
+    <!-- ===== Video ===== -->
+    <text class="h" x="20" y="36">映像</text>
+    <rect class="bx green" x="20" y="50" width="110" height="78" rx="8"/>
+    <text class="t" x="34" y="74">親機</text>
+    <text class="s" x="34" y="94">H264 RTP</text>
+    <text class="m" x="34" y="113">pt101 / FU-A</text>
+  
+    <rect class="bx" x="160" y="50" width="150" height="78" rx="8"/>
+    <text class="t" x="174" y="74">videoTrack</text>
+    <text class="s" x="174" y="94">node-datachannel</text>
+    <text class="s" x="174" y="113">SRTP 復号済み RTP</text>
+  
+    <rect class="bx" x="340" y="50" width="150" height="78" rx="8"/>
+    <text class="t" x="354" y="74">H264Depay</text>
+    <text class="s" x="354" y="94">FU-A を再構成し</text>
+    <text class="s" x="354" y="113">Annex-B NAL に</text>
+  
+    <rect class="bx green" x="520" y="50" width="150" height="78" rx="8"/>
+    <text class="t" x="534" y="74">DoorphoneSource</text>
+    <text class="s" x="534" y="94">SPS / PPS を保持</text>
+    <text class="s" x="534" y="113">IDR から配信開始</text>
+  
+    <rect class="bx blue" x="700" y="50" width="150" height="78" rx="8"/>
+    <text class="t" x="714" y="74">ffmpeg（映像）</text>
+    <text class="m" x="714" y="94">-c:v copy</text>
+    <text class="s" x="714" y="113">→ SRTP で送信</text>
+  
+    <rect class="bx blue" x="880" y="50" width="100" height="78" rx="8"/>
+    <text class="t" x="894" y="74">iPhone</text>
+    <text class="s" x="894" y="94">H264</text>
+    <text class="s" x="894" y="113">そのまま</text>
+  
+    <line class="ar" x1="130" y1="89" x2="156" y2="89" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="310" y1="89" x2="336" y2="89" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="490" y1="89" x2="516" y2="89" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="670" y1="89" x2="696" y2="89" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="850" y1="89" x2="876" y2="89" marker-end="url(#dg-media-pipeline-a)"/>
+  
+    <!-- ===== Snapshot ===== -->
+    <text class="h" x="20" y="176">スナップショット</text>
+    <rect class="bx yellow" x="520" y="160" width="150" height="78" rx="8"/>
+    <text class="t" x="534" y="184">キーフレーム保存</text>
+    <text class="s" x="534" y="204">SPS + PPS + IDR</text>
+    <text class="s" x="534" y="223">欠けた IDR は除外</text>
+  
+    <rect class="bx blue" x="700" y="160" width="150" height="78" rx="8"/>
+    <text class="t" x="714" y="184">ffmpeg（静止画）</text>
+    <text class="m" x="714" y="204">-c:v mjpeg</text>
+    <text class="s" x="714" y="223">5 秒キャッシュ</text>
+  
+    <rect class="bx blue" x="880" y="160" width="100" height="78" rx="8"/>
+    <text class="t" x="894" y="184">Home</text>
+    <text class="s" x="894" y="204">タイル表示</text>
+    <text class="s" x="894" y="223">JPEG</text>
+  
+    <line class="ar" x1="595" y1="128" x2="595" y2="156" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="670" y1="199" x2="696" y2="199" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="850" y1="199" x2="876" y2="199" marker-end="url(#dg-media-pipeline-a)"/>
+  
+    <line class="sep" x1="20" y1="262" x2="980" y2="262"/>
+  
+    <!-- ===== Audio ===== -->
+    <text class="h" x="20" y="292">音声</text>
+    <rect class="bx green" x="20" y="306" width="110" height="78" rx="8"/>
+    <text class="t" x="34" y="330">親機</text>
+    <text class="s" x="34" y="350">PCMU RTP</text>
+    <text class="s" x="34" y="369">8 kHz</text>
+  
+    <rect class="bx" x="160" y="306" width="150" height="78" rx="8"/>
+    <text class="t" x="174" y="330">audioTrack</text>
+    <text class="s" x="174" y="350">RTP ヘッダを除去</text>
+    <text class="s" x="174" y="369">ペイロードのみ</text>
+  
+    <rect class="bx" x="340" y="306" width="150" height="78" rx="8"/>
+    <text class="t" x="354" y="330">AudioPacer</text>
+    <text class="s" x="354" y="350">20 ms ごとに 160 B</text>
+    <text class="s" x="354" y="369">不足分は無音で補う</text>
+  
+    <rect class="bx blue" x="520" y="306" width="150" height="78" rx="8"/>
+    <text class="t" x="534" y="330">ffmpeg（音声）</text>
+    <text class="m" x="534" y="350">libopus 16 kHz</text>
+    <text class="s" x="534" y="369">→ 平文 RTP</text>
+  
+    <rect class="bx blue" x="700" y="306" width="150" height="78" rx="8"/>
+    <text class="t" x="714" y="330">AudioProxy</text>
+    <text class="s" x="714" y="350">RTP TS を書き換え</text>
+    <text class="s" x="714" y="369">SRTP 暗号化</text>
+  
+    <rect class="bx blue" x="880" y="306" width="100" height="78" rx="8"/>
+    <text class="t" x="894" y="330">iPhone</text>
+    <text class="s" x="894" y="350">Opus</text>
+    <text class="s" x="894" y="369">16 kHz</text>
+  
+    <line class="ar" x1="130" y1="345" x2="156" y2="345" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="310" y1="345" x2="336" y2="345" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="490" y1="345" x2="516" y2="345" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="670" y1="345" x2="696" y2="345" marker-end="url(#dg-media-pipeline-a)"/>
+    <line class="ar" x1="850" y1="345" x2="876" y2="345" marker-end="url(#dg-media-pipeline-a)"/>
+  
+    <text class="s" x="20" y="414">※ 親機へは 20 ms ごとに無音の PCMU を送り続ける（アプリと同じ sendrecv の offer にするため）。</text>
+    <text class="s" x="20" y="434">※ RTP タイムスタンプは Opus 標準の 48 kHz 刻み（+960）ではなく、HomeKit が期待する 16 kHz 刻み（+320）に書き換える。</text>
+  </svg>
   <figcaption>図 5. 映像・スナップショット・音声の処理段。</figcaption>
 </figure>
 
@@ -351,7 +1069,113 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
 <p>新しい「スマホ」として親機に登録し、クライアント証明書を発行してもらいます。CLI（<code>doorphone-hap pair</code>）と Web UI の両方から呼ばれます。</p>
 
 <figure class="diagram">
-  <img src="img/pairing-sequence.svg" alt="QR コードから /reg、CSR 生成、KVS 経由の Request_Pairing、証明書の受け取りまでのシーケンス図。">
+  <svg id="dg-pairing-sequence" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 690" role="img" aria-labelledby="dg-pairing-sequence-title dg-pairing-sequence-desc">
+    <title id="dg-pairing-sequence-title">ペアリングのシーケンス</title>
+    <desc id="dg-pairing-sequence-desc">親機の QR コードからクライアント証明書を得るまでの流れ。</desc>
+    <style>
+  
+  #dg-pairing-sequence text { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; fill: #1f2328; }
+  #dg-pairing-sequence .t { font-size: 14px; font-weight: 600; }
+  #dg-pairing-sequence .s { font-size: 11.5px; fill: #59636e; }
+  #dg-pairing-sequence .msg { font-size: 12.5px; }
+  #dg-pairing-sequence .m { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  #dg-pairing-sequence .bx { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+  #dg-pairing-sequence .blue { fill: #ddf4ff; stroke: #54aeff; }
+  #dg-pairing-sequence .green { fill: #dafbe1; stroke: #4ac26b; }
+  #dg-pairing-sequence .yellow { fill: #fff8c5; stroke: #d4a72c; }
+  #dg-pairing-sequence .red { fill: #ffebe9; stroke: #ff8182; }
+  #dg-pairing-sequence .purple { fill: #fbefff; stroke: #c297ff; }
+  #dg-pairing-sequence .life { stroke: #8c959f; stroke-width: 1; stroke-dasharray: 4 4; }
+  #dg-pairing-sequence .ar { stroke: #59636e; stroke-width: 1.4; fill: none; }
+  #dg-pairing-sequence .ar.media { stroke: #1a7f37; stroke-width: 2.2; }
+  #dg-pairing-sequence .ar.ret { stroke-dasharray: 5 3; }
+  #dg-pairing-sequence .ah { fill: #59636e; }
+  #dg-pairing-sequence .ahg { fill: #1a7f37; }
+  #dg-pairing-sequence .note { fill: #fff8c5; stroke: #d4a72c; stroke-width: 1; }
+  #dg-pairing-sequence .phase { fill: #f6f8fa; }
+  #dg-pairing-sequence .ph { font-size: 11.5px; font-weight: 600; fill: #59636e; }
+  @media (prefers-color-scheme: dark) {
+  #dg-pairing-sequence text { fill: #e6edf3; }
+  #dg-pairing-sequence .s, #dg-pairing-sequence .ph { fill: #9198a1; }
+  #dg-pairing-sequence .bx { fill: #151b23; stroke: #656c76; }
+  #dg-pairing-sequence .blue { fill: #121d2f; stroke: #1f6feb; }
+  #dg-pairing-sequence .green { fill: #12261e; stroke: #2ea043; }
+  #dg-pairing-sequence .yellow { fill: #272115; stroke: #9e6a03; }
+  #dg-pairing-sequence .red { fill: #2c1517; stroke: #da3633; }
+  #dg-pairing-sequence .purple { fill: #211830; stroke: #8957e5; }
+  #dg-pairing-sequence .life { stroke: #656c76; }
+  #dg-pairing-sequence .ar { stroke: #9198a1; }
+  #dg-pairing-sequence .ar.media { stroke: #3fb950; }
+  #dg-pairing-sequence .ah { fill: #9198a1; }
+  #dg-pairing-sequence .ahg { fill: #3fb950; }
+  #dg-pairing-sequence .note { fill: #272115; stroke: #9e6a03; }
+  #dg-pairing-sequence .phase { fill: #151b23; }
+  }
+  </style>
+    <defs>
+      <marker id="dg-pairing-sequence-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ah"/>
+      </marker>
+      <marker id="dg-pairing-sequence-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ahg"/>
+      </marker>
+    </defs>
+  
+    <line class="life" x1="80" y1="64" x2="80" y2="684"/>
+    <line class="life" x1="270" y1="64" x2="270" y2="684"/>
+    <line class="life" x1="470" y1="64" x2="470" y2="684"/>
+    <line class="life" x1="670" y1="64" x2="670" y2="684"/>
+    <line class="life" x1="860" y1="64" x2="860" y2="684"/>
+    <rect class="bx purple" x="5" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="80" y="34" text-anchor="middle">利用者</text>
+    <text class="s" x="80" y="53" text-anchor="middle">親機 / ブラウザ</text>
+    <rect class="bx red" x="195" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="270" y="34" text-anchor="middle">pair.js</text>
+    <text class="s" x="270" y="53" text-anchor="middle">doorphone-hap</text>
+    <rect class="bx red" x="395" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="470" y="34" text-anchor="middle">Panasonic クラウド</text>
+    <text class="m s" x="470" y="53" text-anchor="middle">intercom.iot-webrtc.net</text>
+    <rect class="bx " x="595" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="670" y="34" text-anchor="middle">AWS KVS</text>
+    <text class="s" x="670" y="53" text-anchor="middle">シグナリング</text>
+    <rect class="bx green" x="785" y="12" width="150" height="52" rx="8"/>
+    <text class="t" x="860" y="34" text-anchor="middle">親機</text>
+    <text class="s" x="860" y="53" text-anchor="middle">VL-X70AH</text>
+    <rect class="phase" x="10" y="84" width="940" height="22" rx="4"/>
+    <text class="ph" x="20" y="99">① QR コード</text>
+    <line class="ar" x1="80" y1="130" x2="266" y2="130" marker-end="url(#dg-pairing-sequence-a)"/>
+    <text class="msg" x="175" y="124" text-anchor="middle">QR 画像 または URL（/reg/&lt;token&gt;）</text>
+    <rect class="note" x="154" y="151" width="232" height="24" rx="4"/>
+    <text class="s" x="270" y="165" text-anchor="middle">token は 1 回しか使えない</text>
+    <rect class="phase" x="10" y="188" width="940" height="22" rx="4"/>
+    <text class="ph" x="20" y="203">② クラウド登録</text>
+    <line class="ar" x1="270" y1="234" x2="466" y2="234" marker-end="url(#dg-pairing-sequence-a)"/>
+    <text class="msg m" x="370" y="228" text-anchor="middle">GET /reg/&lt;token&gt;  x-auth-hash: HMAC</text>
+    <line class="ar ret" x1="470" y1="268" x2="274" y2="268" marker-end="url(#dg-pairing-sequence-a)"/>
+    <text class="msg" x="370" y="262" text-anchor="middle">AWS 一時クレデンシャル + channelName + PeerIdPrefix</text>
+    <rect class="note" x="98" y="289" width="345" height="40" rx="4"/>
+    <text class="s" x="270" y="303" text-anchor="middle">EC P-256 鍵ペアと CSR を生成</text>
+    <text class="s" x="270" y="319" text-anchor="middle">mobileDeviceId = SP_&lt;UUID&gt;</text>
+    <rect class="phase" x="10" y="342" width="940" height="22" rx="4"/>
+    <text class="ph" x="20" y="357">③ 親機への登録要求（ClientId = &lt;PeerIdPrefix&gt;-&lt;mobileDeviceId&gt;）</text>
+    <line class="ar" x1="270" y1="388" x2="666" y2="388" marker-end="url(#dg-pairing-sequence-a)"/>
+    <text class="msg" x="470" y="382" text-anchor="middle">シグナリング（ライブ視聴と同じ手順）</text>
+    <line class="ar" x1="274" y1="422" x2="856" y2="422" marker-start="url(#dg-pairing-sequence-a)" marker-end="url(#dg-pairing-sequence-a)"/>
+    <text class="msg" x="565" y="416" text-anchor="middle">WebRTC 接続 + DataChannel</text>
+    <line class="ar" x1="270" y1="456" x2="856" y2="456" marker-end="url(#dg-pairing-sequence-a)"/>
+    <text class="msg m" x="565" y="450" text-anchor="middle">Request_Pairing{csr(PEM), mobileDeviceId, …}</text>
+    <line class="ar ret" x1="860" y1="490" x2="274" y2="490" marker-end="url(#dg-pairing-sequence-a)"/>
+    <text class="msg m" x="565" y="484" text-anchor="middle">Response_Pairing{result}</text>
+    <rect class="note" x="742" y="511" width="208" height="24" rx="4"/>
+    <text class="s" x="846" y="525" text-anchor="middle">CSR に署名して証明書を発行</text>
+    <line class="ar ret" x1="860" y1="560" x2="274" y2="560" marker-end="url(#dg-pairing-sequence-a)"/>
+    <text class="msg m" x="565" y="554" text-anchor="middle">Notify_AnswerPairing{client_cert(PEM)}</text>
+    <rect class="phase" x="10" y="582" width="940" height="22" rx="4"/>
+    <text class="ph" x="20" y="597">④ 保存</text>
+    <rect class="note" x="35" y="615" width="470" height="40" rx="4"/>
+    <text class="s" x="270" y="629" text-anchor="middle">cert.pem / privkey.pem / unit.json を</text>
+    <text class="s" x="270" y="645" text-anchor="middle">/etc/doorphone-hap に書き込み → 再起動</text>
+  </svg>
   <figcaption>図 6. ペアリングのシーケンス。</figcaption>
 </figure>
 
@@ -456,7 +1280,7 @@ NAL に <code>damaged</code> の印を付け、source はその IDR をキャッ
   </tbody>
 </table>
 
-<footer class="page">doorphone-hap — <a href="index.html">ドキュメント目次</a> · <a href="analysis.html">ドアホンの解析方法</a></footer>
+<footer class="page">doorphone-hap — <a href="analysis.html">ドアホンの解析方法</a></footer>
 </main>
 </div>
 </body>
